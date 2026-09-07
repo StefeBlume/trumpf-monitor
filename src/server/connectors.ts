@@ -1,5 +1,5 @@
 import {SOURCES,COMMITTEES,MINISTRIES,committeeByKuerzel,type Source,type DocumentInput} from '../model';
-import {parseFeed,officialURL,clean} from './parsing';
+import {parseFeed,parseCommitteeEvents,parseAgendaTable,officialURL,clean} from './parsing';
 export function configuredSources():Source[]{return SOURCES.map(s=>({...s,...(s.kind==='rss'&&s.env&&process.env[s.env]?{feed:process.env[s.env]}:{})}));}
 export async function fetchOfficial(url:string,headers:Record<string,string>={}):Promise<string>{
  if(!officialURL(url))throw new Error('Nur freigegebene amtliche HTTPS-Domains erlaubt');
@@ -78,29 +78,58 @@ export async function ministryDocuments(since:string):Promise<DocumentInput[]>{
  await dipPages('drucksache',since,page=>{for(const d of page){const m=mapMinistryDrucksache(d);if(m)docs.push(m);}});
  return docs;
 }
-// Der amtliche RSS-Feed stellt den Ausschussnamen dem Titel voran: "Wirtschaft und Energie: 12. Sitzung ...".
-export function matchAgendaCommittee(title:string):string|null{
- const prefix=title.split(':')[0].toLowerCase();
- if(prefix===title.toLowerCase())return null;
- const words=(s:string)=>s.toLowerCase().split(/[^a-zäöüß]+/).filter(w=>w.length>4);
+const FILTERLIST='https://www.bundestag.de/ajax/filterlist/de/ausschuesse/';
+// Der amtliche RSS-Feed ist auf 15 Eintraege ueber alle Ausschuesse gedeckelt. Die Tagesordnungsliste
+// hinter derselben Seite liefert dieselben amtlichen PDFs mit Ausschussspalte und ohne diese Grenze.
+export function matchCommitteeName(label:string):string|null{
+ // Die Ausschussspalte ist kurz ("Verteidigung"), der amtliche Name lang ("Verteidigungsausschuss").
+ // Deshalb gilt ein Wortpaar als Treffer, wenn das kuerzere Wort das laengere anfuehrt oder beide
+ // mindestens sechs Zeichen gemeinsamen Wortstamm haben.
+ const words=(x:string)=>x.toLowerCase().split(/[^a-zäöüß]+/).filter(w=>w.length>4);
+ const stem=(a:string,b:string)=>{const [s,l]=a.length<=b.length?[a,b]:[b,a];if(l.startsWith(s))return true;let i=0;while(i<s.length&&s[i]===l[i])i++;return i>=6;};
+ const target=words(label);
+ if(!target.length)return null;
  let best:{id:string;hits:number}|null=null;
  for(const c of COMMITTEES){
  if(c.institution!=='Bundestag')continue;
- const terms=words(c.name);const hits=terms.filter(t=>prefix.includes(t)).length;
- if(hits&&hits>=terms.length/2&&(!best||hits>best.hits))best={id:c.id,hits};
+ const name=words(c.name);
+ const hits=target.filter(t=>name.some(n=>stem(t,n))).length;
+ if(hits&&hits>=target.length/2&&(!best||hits>best.hits))best={id:c.id,hits};
  }
  return best?.id??null;
 }
-export async function agendaDocuments(feed:string):Promise<DocumentInput[]>{
- return parseFeed(await fetchOfficial(feed),feed).flatMap(d=>{
- const id=matchAgendaCommittee(d.title);
- return id?[{...d,documentType:'Tagesordnung',step:'Sitzungstermin',committees:[id],lead:id,pdfUrl:d.url.endsWith('.pdf')?d.url:null}]:[];
+export async function agendaDocuments():Promise<DocumentInput[]>{
+ const url=`${FILTERLIST}1061622-1061622?offset=0&limit=50&noFilterSet=true`;
+ return parseAgendaTable(await fetchOfficial(url),url).flatMap(row=>{
+ const id=matchCommitteeName(row.committee);
+ return id?[{externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,documentType:'Tagesordnung',step:'Sitzungstermin',
+ procedure:null,documentNumber:null,pdfUrl:row.url.endsWith('.pdf')?row.url:null,committees:[id],lead:id,ministries:[],originator:null}]:[];
  });
+}
+// Anhoerungen und oeffentliche Sitzungen je ausgewaehltem Ausschuss. Eine leere Liste ist ein Fehler:
+// bricht das CMS die Struktur, faellt das auf, statt still nichts zu liefern.
+export async function eventDocuments():Promise<DocumentInput[]>{
+ const withEvents=COMMITTEES.filter(c=>c.events);
+ const docs:DocumentInput[]=[];const failed:string[]=[];
+ for(const c of withEvents){
+ const url=`${FILTERLIST}${c.events}?offset=0&limit=10&noFilterSet=true`;
+ try{
+ const rows=parseCommitteeEvents(await fetchOfficial(url),url);
+ if(!rows.length)throw new Error('keine Einträge im erwarteten Format');
+ for(const row of rows)docs.push({externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,
+ documentType:'Ausschusstermin',step:'Anhörung oder Sitzung',procedure:null,documentNumber:null,pdfUrl:null,
+ committees:[c.id],lead:c.id,ministries:[],originator:c.name});
+ }catch(e){failed.push(`${c.short}: ${e instanceof Error?e.message:'Abruf fehlgeschlagen'}`);}
+ }
+ if(failed.length>withEvents.length/2)throw new Error(`Terminlisten überwiegend nicht lesbar (${failed.slice(0,3).join('; ')})`);
+ if(failed.length)console.warn(JSON.stringify({event:'committee_events_partial',failed}));
+ return docs;
 }
 export async function ingest(source:Source,since:string):Promise<DocumentInput[]>{
  if(source.kind==='committee-dip')return committeeDocuments(since);
  if(source.kind==='ministry-dip')return ministryDocuments(since);
- if(source.kind==='committee-agenda'&&source.feed)return agendaDocuments(source.feed);
+ if(source.kind==='committee-agenda')return agendaDocuments();
+ if(source.kind==='committee-events')return eventDocuments();
  if(source.kind==='rss'&&source.feed)return parseFeed(await fetchOfficial(source.feed),source.feed);
  throw new Error('Manuelle Ergänzung erforderlich');
 }

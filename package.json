@@ -12,7 +12,9 @@
     "monitor": "tsx scripts/monitor.ts",
     "sync:ios": "node scripts/sync-ios.mjs",
     "build:cloud": "node scripts/cloud-build.mjs",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "build:pages": "MOBILE_EXPORT=1 NEXT_PUBLIC_STATIC=1 next build && rm -f out/connection.json",
+    "monitor:cron": "tsx scripts/monitor.ts --cron"
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",

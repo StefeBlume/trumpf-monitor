@@ -1,7 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {parseFeed,contentHash,officialURL} from '../src/server/parsing';
-import {mapCommitteePosition,mapMinistryDrucksache,matchAgendaCommittee,lookbackStart} from '../src/server/connectors';
+import {parseFeed,contentHash,officialURL,germanDate,parseCommitteeEvents,parseAgendaTable} from '../src/server/parsing';
+import {mapCommitteePosition,mapMinistryDrucksache,matchCommitteeName,lookbackStart} from '../src/server/connectors';
 import {berlinClock,runMonitor,dashboard,history,briefingSummary} from '../src/server/monitor';
 import {resetDBForTests} from '../src/server/db';import {COMMITTEES,MINISTRIES,type DocumentInput,type Item,type Source} from '../src/model';
 const doc:DocumentInput={externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',url:'https://www.bundestag.de/test',text:'',publishedAt:null,documentType:'Gesetzentwurf',step:'Gesetzentwurf',procedure:'Gesetzgebung',documentNumber:'21/1234',pdfUrl:null,committees:['we'],lead:'we',ministries:[],originator:'Bundesregierung'};
@@ -20,6 +20,9 @@ test('Kuratierte Auswahl bleibt eindeutig zuordenbar',()=>{
  assert.equal(COMMITTEES.length,new Set(COMMITTEES.map(c=>c.id)).size);
  // Kollision zwischen Ausschuss- und Ressort-Ids würde die Filter in der Oberfläche verschmelzen.
  for(const m of MINISTRIES)assert.ok(!COMMITTEES.some(c=>c.id===m.id),`Id-Kollision: ${m.id}`);
+ // Termin-Pfade muessen eindeutig sein, sonst zeigen zwei Ausschuesse dieselbe Liste.
+ const events=COMMITTEES.map(c=>c.events).filter(Boolean);
+ assert.equal(events.length,new Set(events).size);
 });
 test('Überweisung wird nur für ausgewählte Ausschüsse übernommen',()=>{
  const m=mapCommitteePosition(position)!;
@@ -43,12 +46,40 @@ test('Ressorts werden über das amtliche Urheberfeld erkannt, nicht über den Ti
  assert.equal(mapMinistryDrucksache({id:'9',titel:'Bericht des Bundesministeriums für Wirtschaft und Energie',fundstelle:{urheber:['Fraktion der AfD']}}),null);
  assert.equal(mapMinistryDrucksache({id:'9',titel:'X',fundstelle:{urheber:['Bundesministerium für Gesundheit']}}),null);
 });
-test('Tagesordnungen werden nur bei eindeutigem Ausschusspräfix übernommen',()=>{
- assert.equal(matchAgendaCommittee('Wirtschaft und Energie: 12. Sitzung am Mittwoch'),'we');
- assert.equal(matchAgendaCommittee('Forschung, Technologie und Raumfahrt: 8. Sitzung'),'ftr');
- assert.equal(matchAgendaCommittee('Inneres: 40. Sitzung am Donnerstag'),null);
- assert.equal(matchAgendaCommittee('Parlament: Tagesordnung Dienstag'),null);
- assert.equal(matchAgendaCommittee('Tagesordnung ohne Präfix'),null);
+test('Tagesordnungen werden nur für ausgewählte Ausschüsse übernommen',()=>{
+ // Kurzbezeichnung der Spalte gegen den langen amtlichen Namen.
+ assert.equal(matchCommitteeName('Verteidigung'),'vt');
+ assert.equal(matchCommitteeName('Finanzen'),'fi');
+ assert.equal(matchCommitteeName('Wirtschaft, Energie'),'we');
+ assert.equal(matchCommitteeName('Umwelt, Klimaschutz, Naturschutz, Nukleare Sicherheit'),'um');
+ for(const off of ['Inneres','Verkehr','Gesundheit','Tourismus','Landwirtschaft, Ernährung, Heimat',''])
+ assert.equal(matchCommitteeName(off),null,`${off} ist nicht ausgewählt`);
+});
+test('Deutsche Datumsangaben werden geparst, nie geraten',()=>{
+ assert.equal(germanDate('8. September 2026')?.slice(0,10),'2026-09-08');
+ assert.equal(germanDate(' 17. Dezember 2025 ')?.slice(0,10),'2025-12-17');
+ for(const bad of ['September 2026','8. Smarch 2026','','demnächst'])assert.equal(germanDate(bad),null);
+});
+// Aus der amtlichen Anhoerungsliste des Wirtschaftsausschusses gekuerzt.
+test('Anhörungsliste liefert Datum, Titel und Permalink',()=>{
+ const rows=parseCommitteeEvents(`<div class="bt-listenteaser"><h3>September 2026</h3><h4>8. September 2026</h4>
+  <ul class="bt-linkliste"><li><a title="Anhörung zum Wärmeplanungsgesetz" href="https://www.bundestag.de/ausschuesse/a09_wirtschaft/wp21_a09_Anhoerungen/1205008-1205008">Anhörung zum Wärmeplanungsgesetz</a></li></ul>
+  <h4>22. Juni 2026</h4><ul class="bt-linkliste"><li><a href="https://www.bundestag.de/x">Scharfe Kritik</a></li><li><a href="https://www.bundestag.de/y">Vorrang für Freileitungen</a></li></ul></div>`,'https://www.bundestag.de/');
+ assert.equal(rows.length,3);
+ assert.equal(rows[0].title,'Anhörung zum Wärmeplanungsgesetz');
+ assert.equal(rows[0].date?.slice(0,10),'2026-09-08');
+ // Jeder Termin behaelt das Datum seiner eigenen h4-Gruppe.
+ assert.equal(rows[2].date?.slice(0,10),'2026-06-22');
+ assert.deepEqual(parseCommitteeEvents('<div class="bt-listenteaser"></div>','https://www.bundestag.de/'),[]);
+});
+test('Tagesordnungstabelle liefert Ausschussspalte und PDF',()=>{
+ // Vierspaltige Zeile im Template-Wrapper, genau wie die amtliche Antwort sie liefert.
+ const rows=parseAgendaTable(`<template data-js-document-results="table"><tr><td>9. September 2026</td><td>Verteidigung</td><td><a href="https://www.bundestag.de/resource/blob/1/to.pdf">Tagesordnung für die 33. Sitzung</a></td><td>Tagesordnung</td></tr>
+  <tr><td>nur zwei</td><td>Spalten</td></tr></template>`,'https://www.bundestag.de/');
+ assert.equal(rows.length,1);
+ assert.equal(rows[0].committee,'Verteidigung');
+ assert.equal(rows[0].date?.slice(0,10),'2026-09-09');
+ assert.ok(rows[0].url.endsWith('.pdf'));
 });
 test('Abruffenster überlappt den letzten Lauf und reicht höchstens 30 Tage zurück',()=>{
  const recent=lookbackStart(new Date(Date.now()-3600000).toISOString());

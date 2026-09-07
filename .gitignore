@@ -1,15 +1,14 @@
 node_modules/
 .next/
 out/
-data/
+data/*
+!data/monitor.db
 .env*
 !.env.example
 *.tsbuildinfo
 ios/App/CapApp-SPM/.build/
-
 ios/App/App/public/
 ios/App/App/capacitor.config.json
-
 dist/
 ios/App/CapApp-SPM/Frameworks/
 **/xcuserdata/

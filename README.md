@@ -6,7 +6,7 @@ Zeigt an, was in ausgewählten Bundestags- und Bundesratsausschüssen sowie ausg
 
 ## Die Auswahl
 
-Überwacht werden 11 Bundestags- und 5 Bundesratsausschüsse sowie 6 Ressorts (siehe `src/model.ts`, sichtbar in der App unter „Ausschüsse"). Nicht ausgewählt sind unter anderem Inneres, Verkehr, Gesundheit, Landwirtschaft, Kultur, Bau und Wohnen, Familie und Menschenrechte.
+Überwacht werden 11 Bundestags- und 5 Bundesratsausschüsse sowie 4 Ressorts (siehe `src/model.ts`, sichtbar in der App unter „Ausschüsse"). Nicht ausgewählt sind unter anderem Inneres, Verkehr, Gesundheit, Landwirtschaft, Kultur, Bau und Wohnen, Familie und Menschenrechte.
 
 **Regel `leadOnly`:** Querschnittsausschüsse — Finanzen, Haushalt, Recht, Arbeit und Soziales, EU sowie sämtliche Bundesratsausschüsse — werden nahezu jeder Vorlage mitberatend zugewiesen. Dort zählt nur die Federführung. Fachlich eng zugeschnittene Ausschüsse (Wirtschaft und Energie, Forschung und Technologie, Auswärtiges, Digitales, Umwelt, Verteidigung) zählen auch mitberatend. Ohne diese Regel steigt das Rauschen im 14-Tage-Fenster von 30 auf 41 Dokumente, überwiegend durch Routine-Mitberatungen im Bundesrat.
 
@@ -18,8 +18,11 @@ Auswahl und Regel ändern: `COMMITTEES` und `MINISTRIES` in `src/model.ts`. Die 
 |---|---|---|
 | DIP `vorgangsposition` | API | `ueberweisung[].ausschuss_kuerzel` gegen die Auswahl, `leadOnly` beachtet |
 | DIP `drucksache` | API | amtliches Urheberfeld `fundstelle.urheber` gegen die Ressortauswahl |
-| Ausschuss-Tagesordnungen | RSS | Ausschusspräfix im Titel gegen die Bundestagsauswahl |
+| Anhörungen und öffentliche Sitzungen | Terminlisten der Ausschüsse | je ausgewähltem Bundestagsausschuss eine eigene amtliche Liste |
+| Tagesordnungen | ausschussübergreifende Liste | Ausschussspalte gegen die Bundestagsauswahl |
 | BAFA-Newsfeed | RSS | ungefiltert, ohne Gremienbezug |
+
+Die Termin- und Tagesordnungslisten sind HTML-Listen der Ausschussseiten, keine dokumentierte Schnittstelle. Bricht das CMS die Struktur, meldet die Terminquelle einen Fehler, statt still nichts zu liefern. Der frühere RSS-Feed war auf 15 Einträge über alle Ausschüsse gedeckelt und lieferte deshalb nur einen Bruchteil der Termine.
 
 Abgerufen wird inkrementell über `f.aktualisiert.start`: ab dem letzten erfolgreichen Lauf mit zwei Tagen Überlappung, höchstens 30 Tage zurück, beim Erstlauf 14 Tage.
 
@@ -61,8 +64,28 @@ Ein Erstimport ist kein Fund. Die Zusammenfassung sagt das ausdrücklich.
 - **Referentenentwürfe vor der Zuleitung an das Parlament sind nicht erfasst.** Ministerien werden über das Urheberfeld amtlicher Drucksachen erkannt, nicht über Pressemitteilungen oder Verbändeanhörungen. Für die frühe Phase existiert keine maschinell zuverlässige amtliche Schnittstelle.
 - **Keine PDF-Volltexte.** Erfasst werden Metadaten und der Link; der Inhalt der Drucksachen wird nicht ausgewertet.
 - **Der BAFA-Feed liefert kein Veröffentlichungsdatum.** Die App zeigt dort „Kein Datum in der Quelle" statt ein Datum aus der URL zu raten.
+- **Der Auswärtige Ausschuss führt keine öffentliche Terminliste.** Er tagt überwiegend nicht öffentlich; seine Sitzungen erscheinen nur über die Tagesordnungsliste.
+- **Die Datenbank wächst unbegrenzt.** Erfasste Dokumente werden nicht automatisch entfernt. Bei Bedarf `data/monitor.db` löschen und neu aufsetzen; der nächste Lauf legt einen frischen Ausgangsstand an.
 - **EUR-Lex und Have Your Say sind nicht angebunden.** Beides liegt außerhalb der Ausschuss- und Ressortauswahl; EU-Vorlagen erscheinen nur, soweit sie an einen ausgewählten Ausschuss überwiesen wurden.
 - **Keine Meldung ist kein Entwarnungsnachweis.** Die Anzeige gilt nur für die ausgewählten Gremien und die erfolgreich abgerufenen Quellen. Fehlgeschlagene Abrufe werden pro Quelle mit Fehlertext ausgewiesen.
+
+## Betrieb auf GitHub Pages
+
+Für die Nutzung auf dem Handy ohne laufenden Mac baut `.github/workflows/monitor.yml` die App als statische Seite:
+
+1. Repository auf GitHub anlegen und pushen.
+2. Unter **Settings → Secrets and variables → Actions** das Secret `DIP_API_KEY` setzen.
+3. Unter **Settings → Pages** als Quelle **GitHub Actions** wählen.
+
+Der Workflow ruft täglich die Quellen ab, schreibt `data/monitor.db` und `public/bootstrap.json` zurück ins Repository und veröffentlicht den Export. Der Zeitplan feuert um 04:00 und 05:00 UTC; `npm run monitor:cron` läuft nur zur 6. Stunde Europe/Berlin und höchstens einmal je Kalendertag, sodass Sommer- und Winterzeit abgedeckt sind.
+
+Die veröffentlichte Seite ist **nur lesend**: Quellenlauf, Archivieren und Versionsvergleich brauchen den Server und sind ausgeblendet. Sie ist außerdem **öffentlich erreichbar** — die angezeigten Dokumente sind amtlich und öffentlich, die Auswahl der Gremien ist es damit auch.
+
+Lokal prüfen:
+
+```bash
+NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
+```
 
 ## Tests
 
