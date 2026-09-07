@@ -14,3 +14,4 @@ dist/
 ios/App/CapApp-SPM/Frameworks/
 **/xcuserdata/
 CLAUDE_HANDOFF.md
+public/connection.json

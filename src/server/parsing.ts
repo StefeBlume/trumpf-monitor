@@ -16,9 +16,9 @@ export function parseFeed(xml:string,base:string):DocumentInput[] {
   const url=safeURL(link??'',base); const title=clean(entry.title?.['#text']??entry.title);
   if(!url||!title)return null;
   const date=entry.pubDate??entry.published??null;
-  return {externalId:String(entry.guid?.['#text']??entry.guid??entry.id??url),title,url,text:clean(entry['content:encoded']??entry.content?.['#text']??entry.content??entry.description??entry.summary?.['#text']??entry.summary??''),publishedAt:date&&!isNaN(Date.parse(date))?new Date(date).toISOString():null,procedure:null,documentType:'RSS-Meldung'};
+  return {externalId:String(entry.guid?.['#text']??entry.guid??entry.id??url),title,url,text:clean(entry['content:encoded']??entry.content?.['#text']??entry.content??entry.description??entry.summary?.['#text']??entry.summary??''),publishedAt:date&&!isNaN(Date.parse(date))?new Date(date).toISOString():null,documentType:'RSS-Meldung',step:null,procedure:null,documentNumber:null,pdfUrl:null,committees:[],lead:null,ministries:[],originator:null};
  }).filter((x:DocumentInput|null):x is DocumentInput=>!!x);
 }
 export function contentHash(doc:DocumentInput):string {
- return createHash('sha256').update(JSON.stringify({title:clean(doc.title),text:clean(doc.text),url:doc.url,publishedAt:doc.publishedAt,procedure:doc.procedure,documentType:doc.documentType})).digest('hex');
+ return createHash('sha256').update(JSON.stringify({title:clean(doc.title),text:clean(doc.text),url:doc.url,publishedAt:doc.publishedAt,procedure:doc.procedure,documentType:doc.documentType,step:doc.step,documentNumber:doc.documentNumber,pdfUrl:doc.pdfUrl,committees:[...doc.committees].sort(),lead:doc.lead,ministries:[...doc.ministries].sort(),originator:doc.originator})).digest('hex');
 }
