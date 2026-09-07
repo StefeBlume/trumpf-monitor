@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+data/
+.env*
+!.env.example
+*.tsbuildinfo
+ios/App/CapApp-SPM/.build/
+
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+
+dist/
+ios/
+CLAUDE_HANDOFF.md
