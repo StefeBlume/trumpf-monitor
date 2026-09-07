@@ -11,5 +11,6 @@ ios/App/App/public/
 ios/App/App/capacitor.config.json
 
 dist/
-ios/
+ios/App/CapApp-SPM/Frameworks/
+**/xcuserdata/
 CLAUDE_HANDOFF.md

@@ -17,3 +17,5 @@ test('Persistent runs distinguish baseline, unchanged, new, changed and source f
  const failure=await runMonitor({sources:[source],fetcher:async()=>{throw new Error('offline');}});assert.equal(failure?.coverage.failed,1);assert.match(failure!.summary,/Keine belastbare Aussage/);assert.equal((await dashboard()).items.length,2);
  assert.equal((await dashboard()).briefings.find(b=>b.id===first!.id)?.items[0].version,1);
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+test('EUV matches the technology, not Neuverschuldung',()=>{assert.ok(!ruleEvaluation({...doc,title:'Neuverschuldung',text:'Haushalt'}).channels.includes('K9'));assert.ok(ruleEvaluation({...doc,title:'EUV-Lithografie',text:'Forschung'}).channels.includes('K9'));});

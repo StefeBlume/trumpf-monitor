@@ -1,5 +1,23 @@
 # TRUMPF Policy Monitor
 
+## Aktueller Stand: Online-Version für das iPhone
+
+Die App verwendet jetzt den privaten Online-Dienst unter https://policy-monitor-stefeblume.stefeblume42.chatgpt.site und eine persistente Cloud-D1-Datenbank. Der Mac wird für die Nutzung und Quellenabrufe nicht mehr benötigt. Die iOS-App öffnet den privaten Dienst; gegebenenfalls einmalig mit demselben ChatGPT-Konto anmelden. Keine lokale Server-Adresse und kein APP_TOKEN in der neuen App nötig.
+
+Bei Verbindungsabbruch zeigt die iOS-Hülle eine lokale Offline-Ansicht. Erfolgreich geladene Daten werden zusätzlich über das native OfflineCache-Plugin als geschützte Datei auf dem Gerät gespeichert. Noch nicht vollständig durch einen physischen Offline-Test bestätigt. Das Cloud-Backend hat einen vollständigen Quellenlauf mit 48 Einträgen aus vier Quellen ohne Abruffehler abgeschlossen.
+
+Die nachfolgenden lokalen Startanweisungen beschreiben den optionalen Entwicklungsbetrieb. Sie sind KEINE Voraussetzung für die Handy-Nutzung.
+
+### Cloud-Wartung
+
+`npm run build:cloud` erstellt einen Cloudflare-kompatiblen Worker und die statische Next.js-Oberfläche. `.openai/hosting.json` enthält die bestehende Site-ID und D1-Bindung; nicht erneut registrieren. Migrationen unter `drizzle/` sind nach Veröffentlichung unveränderlich. Die Site ist ausschließlich für das Eigentümerkonto veröffentlicht. Keine öffentliche Freigabe vorgenommen.
+
+`npm run sync:ios` erhält die lokale Capacitor-Einbindung. Root-Konfiguration und native Hülle zeigen auf die Cloud-Adresse. HTTP-Ausnahmen und der Mac-Verbindungsschlüssel wurden aus der neuen iOS-Version entfernt. Der lokale Offline-Einstieg ist `public/offline.html`. Das native Plugin befindet sich in `ios/App/App/AppDelegate.swift`.
+
+Weiterhin offen: acht zusätzliche Quellenanbindungen, optionale KI-Zugangsdaten und ein garantierter serverseitiger 06:00-Zeitplan. Der aktuelle Sites-Deploy aktiviert die mitgelieferte Vercel-Crondatei NICHT. Quellenabrufe funktionieren manuell im Online-Dienst.
+
+---
+
 Lauffähige erste Kernversion: Next.js/TypeScript mit lokal installierbarer iOS-App (Capacitor/Xcode). Die Software ist ein persönlicher Prototyp, keine offiziell freigegebene TRUMPF-Anwendung und noch kein vollständiges Produktionsmonitoring.
 
 ## Aktueller Funktionsumfang

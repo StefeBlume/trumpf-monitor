@@ -5,7 +5,7 @@ export type Category = 'relevant' | 'watch' | 'irrelevant';
 export type Change = 'baseline'|'new'|'changed'|'unchanged';
 export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'rss'|'dip'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number;}
 export interface DocumentInput {externalId:string; title:string; url:string; text:string; publishedAt:string|null; procedure:string|null; documentType:string;}
-export interface Evaluation {category:Category; score:number; triage:'hoch'|'mittel'|'gering'|'nicht relevant'; channels:string[]; summary:string; reason:string; evidence:string[]; action:string; owner:string; materiality:string; window:string; actors:string; stage:string; method:string;}
+export interface Evaluation {policyVersion?:number; category:Category; score:number; triage:'hoch'|'mittel'|'gering'|'nicht relevant'; channels:string[]; summary:string; reason:string; evidence:string[]; action:string; owner:string; materiality:string; window:string; actors:string; stage:string; method:string;}
 export interface Item extends DocumentInput {id:string; sourceId:string; institution:string; evaluation:Evaluation; hash:string; version:number; change:Change; firstSeen:string; lastSeen:string; changedAt:string; archived:boolean;}
 export interface Event {id:string; itemId:string; title:string; at:string; change:Change; sourceId:string; version:number;}
 export interface Briefing {id:string; createdAt:string; day:string; baseline:boolean; summary:string; items:Item[]; coverage:{ok:number; failed:number; manual:number}; errors:string[];}

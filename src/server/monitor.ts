@@ -23,7 +23,7 @@ export async function runMonitor(options:{cron?:boolean; sources?:Source[]; fetc
  for(const doc of new Map(docs.map(d=>[d.externalId,d])).values()){
  const itemId=createHash('sha256').update(source.id+'|'+doc.externalId).digest('hex').slice(0,24);const old=existing.get(itemId),hash=contentHash(doc);
  const change=old?(hash===old.hash?'unchanged':'changed'):(baseline?'baseline':'new');
- const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(hash!==old.hash?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false,evaluation:change==='unchanged'?old!.evaluation:await evaluate(doc)};
+ const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(hash!==old.hash?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false,evaluation:change==='unchanged'&&old!.evaluation.policyVersion===2?old!.evaluation:await evaluate(doc)};
  statements.push({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[itemId,source.id,JSON.stringify(item)]});
  if(change!=='unchanged'){
  const event:Event={id:randomUUID(),itemId,title:item.title,at:now,change,sourceId:source.id,version:item.version};
