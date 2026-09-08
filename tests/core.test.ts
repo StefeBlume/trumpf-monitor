@@ -133,6 +133,12 @@ test('Ohne Datenbank stellt der veröffentlichte Stand die bekannten Dokumente w
  assert.equal(await seedFromSnapshot(snapshot),1);
  const second=await runMonitor({sources:[source],fetcher:async()=>[doc]});
  assert.equal(second?.items.length,0,'bekanntes Dokument darf nicht erneut als neu gelten');
+ // Nach dem Wiederaufbau muss die naechste Aenderung wieder vergleichbar sein.
+ await runMonitor({sources:[source],fetcher:async()=>[{...doc,step:'Beschlussempfehlung und Bericht'}]});
+ const d2=await dashboard();
+ const h=await history(d2.items[0].id);
+ assert.equal(h.versions.length,2,'Wiederaufbau muss einen Vergleichsstand hinterlassen');
+ assert.ok(h.diff.some(p=>p.added),'der Wortdiff muss die Änderung zeigen');
  // Ein zweiter Aufbau darf einen vorhandenen Bestand nicht überschreiben.
  assert.equal(await seedFromSnapshot(snapshot),0);
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});

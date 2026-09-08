@@ -14,7 +14,7 @@ export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed
  const named=[...committees].map(id=>committeeById(id)?.short).filter(Boolean).slice(0,4).join(', ');
  return `${head}${changes.length} neue oder geänderte Dokumente${committees.size?` in ${committees.size} ausgewählten Ausschüssen (${named}${committees.size>4?' u. a.':''})`:''}. ${coverage}`;
 }
-export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,since:string)=>Promise<DocumentInput[]>}={}):Promise<Briefing|null>{
+export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,since:string,warn?:(n:string)=>void)=>Promise<DocumentInput[]>; retentionDays?:number}={}):Promise<Briefing|null>{
  const c=await db(),id=randomUUID(),clock=berlinClock();
  const lock=await c.execute({sql:'INSERT INTO locks(id,owner,expires) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,expires=excluded.expires WHERE locks.expires < ?',args:['monitor',id,Date.now()+600000,Date.now()]});
  if(!lock.rowsAffected)throw new Error('Ein Quellenlauf ist bereits aktiv.');
@@ -26,7 +26,8 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const now=new Date().toISOString();
  try{
  const since=lookbackStart(states.get(source.id)?.status==='ok'?states.get(source.id)?.checkedAt:undefined);
- const docs=await(options.fetcher??ingest)(source,since);
+ let warning:string|null=null;
+ const docs=await(options.fetcher??ingest)(source,since,(note:string)=>{warning=note;});
  const baseline=!states.get(source.id)?.checkedAt&&!initial.items.some(i=>i.sourceId===source.id);
  const statements:any[]=[];const sourceUpdates:Item[]=[];
  for(const doc of new Map(docs.map(d=>[d.externalId,d])).values()){
@@ -41,12 +42,14 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  }
  }
  // Ein leeres Ergebnis ist hier eine gültige Aussage: im Fenster wurde nichts Passendes überwiesen oder veröffentlicht.
- statements.push({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:'ok',checkedAt:now,count:docs.length,error:null,since})]});
- await c.batch(statements,'write');updated.push(...sourceUpdates);ok++;
+ statements.push({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:warning?'partial':'ok',checkedAt:now,count:docs.length,error:warning,since})]});
+ await c.batch(statements,'write');updated.push(...sourceUpdates);ok++;if(warning)errors.push(`${source.institution}: ${warning}`);
  }catch(e){failed++;const error=e instanceof Error?e.message:'Abruf fehlgeschlagen';errors.push(`${source.institution}: ${error}`);await c.execute({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:'error',checkedAt:states.get(source.id)?.checkedAt??null,count:states.get(source.id)?.count??0,error})]});}
  // Renew owner-specific lease between sources.
  await c.execute({sql:'UPDATE locks SET expires=? WHERE id=? AND owner=?',args:[Date.now()+600000,'monitor',id]});
  }
+ const retention=options.retentionDays??Number(process.env.RETENTION_DAYS??180);
+ if(retention>0&&ok)await prune(retention);
  const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated,coverage:{ok,failed,manual},errors};
  // Bei stuendlichen Laeufen wuerde jeder Lauf ein Briefing schreiben und die Liste zumuellen.
  // Gespeichert wird deshalb nur, was etwas gebracht hat - plus ein Tageseintrag, damit auch
@@ -68,9 +71,29 @@ export async function seedFromSnapshot(snapshot:{items?:Item[];events?:Event[];b
  if(!items.length)return 0;
  if((await c.execute('SELECT id FROM items LIMIT 1')).rows.length)return 0;
  await c.batch([
+ // Auch je einen Versionsstand anlegen: sonst faellt nach dem Wiederaufbau der erste Vergleich aus,
+ // weil die naechste Aenderung nichts hat, wogegen sie sich vergleichen liesse.
+ ...items.map(i=>({sql:'INSERT OR REPLACE INTO versions(item_id,version,data) VALUES(?,?,?)',args:[i.id,i.version,JSON.stringify({...i,change:'unchanged' as const})]})),
  ...items.map(i=>({sql:'INSERT OR REPLACE INTO items(id,source_id,data) VALUES(?,?,?)',args:[i.id,i.sourceId,JSON.stringify({...i,change:'unchanged' as const})]})),
  ...(snapshot.events??[]).map(e=>({sql:'INSERT OR REPLACE INTO events(id,run_id,data) VALUES(?,?,?)',args:[e.id,'snapshot',JSON.stringify(e)]})),
  ...(snapshot.briefings??[]).map(b=>({sql:'INSERT OR REPLACE INTO briefings(id,day,data) VALUES(?,?,?)',args:[b.id,b.day,JSON.stringify(b)]}))
  ],'write');
  return items.length;
+}
+
+// Ohne Aufbewahrungsgrenze waechst der veroeffentlichte Stand unbegrenzt und die Seite wird auf dem
+// Handy langsam. Archiviertes bleibt, weil es bewusst aufgehoben wurde.
+export async function prune(days:number):Promise<number>{
+ const c=await db();
+ const cutoff=new Date(Date.now()-days*86400000).toISOString();
+ const stale=await c.execute({sql:"SELECT id FROM items WHERE json_extract(data,'$.archived')=0 AND json_extract(data,'$.lastSeen')<?",args:[cutoff]});
+ const ids=stale.rows.map(r=>String(r.id));
+ if(!ids.length)return 0;
+ const list=ids.map(()=>'?').join(',');
+ await c.batch([
+ {sql:`DELETE FROM versions WHERE item_id IN (${list})`,args:ids},
+ {sql:`DELETE FROM events WHERE json_extract(data,'$.itemId') IN (${list})`,args:ids},
+ {sql:`DELETE FROM items WHERE id IN (${list})`,args:ids}
+ ],'write');
+ return ids.length;
 }

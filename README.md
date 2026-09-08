@@ -26,7 +26,11 @@ Die Termin- und Tagesordnungslisten sind HTML-Listen der Ausschussseiten, keine 
 
 Abgerufen wird inkrementell über `f.aktualisiert.start`: ab dem letzten erfolgreichen Lauf mit zwei Tagen Überlappung, höchstens 30 Tage zurück, beim Erstlauf 14 Tage.
 
-Nur freigegebene amtliche HTTPS-Domains werden abgerufen (`officialURL` in `src/server/parsing.ts`). PDF-Adressen aus der API werden gegen dieselbe Liste geprüft, bevor sie in der Oberfläche als Quelle erscheinen.
+**Adressen.** Nur freigegebene amtliche HTTPS-Domains werden abgerufen (`officialURL` in `src/server/parsing.ts`). Jede Adresse, die als Quelle in der Oberfläche erscheint, läuft vorher durch `sourceURL` — syntaktisch gültig reicht nicht, sie muss auf einer Behördendomain liegen. Das gilt auch für Verweise aus fremdem Markup (Termin- und Tagesordnungslisten) und aus RSS-Feeds. Weiterleitungen über Domaingrenzen hinweg werden abgebrochen, statt den API-Schlüssel mitzusenden.
+
+**Formatbrüche.** Terminlisten melden einen Fehler, wenn ein Ausschuss gar keine Einträge im erwarteten Format liefert; brechen mehr als die Hälfte, scheitert die Quelle ganz. Die Tagesordnungstabelle meldet einen Fehler, wenn Zeilen vorhanden sind, aber keine Verweise enthalten. Eine leere Liste in sitzungsfreien Wochen ist dagegen gültig. Diese Prüfungen gibt es, weil der Tagesordnungs-Parser nach einem Spaltenwechsel schon einmal still auf null lief.
+
+**Aufbewahrung.** `RETENTION_DAYS` (Standard 180) entfernt nach jedem erfolgreichen Lauf nicht archivierte Dokumente, die so lange nicht mehr in einer Quelle aufgetaucht sind, samt ihrer Versionen und Ereignisse. Ohne diese Grenze wüchsen Datenbank und veröffentlichter Stand unbegrenzt.
 
 ## Setup
 
@@ -47,6 +51,7 @@ npm run dev                  # http://localhost:4180
 | `DATABASE_URL` | Hosting | Lokal `file:data/monitor.db`; beim Hosting persistente libsql-URL |
 | `SCHEDULE_ENABLED` | nein | Nur auf `true` setzen, wenn ein echter Scheduler eingerichtet ist |
 | `DIP_WAHLPERIODE` | nein | Standard 21 |
+| `RETENTION_DAYS` | nein | Standard 180; `0` schaltet die Aufbewahrungsgrenze ab |
 | `BAFA_FEED_URL` | nein | Abweichende amtliche Feed-URL |
 
 ### Zeitplan
@@ -97,4 +102,6 @@ NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
 npm test
 ```
 
-Geprüft werden Feed-Parsing und Domain-Allowlist, die Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, die Kollisionsfreiheit der Auswahl, das Abruffenster, die Hash-Bildung und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+36 Tests in zwei Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+
+`tests/hardening.test.ts` deckt die Randfälle ab, die im Audit aufgefallen sind: fremde Adressen aus fremdem Markup, unsichtbare Trennzeichen, Formatbrüche gegen legitime Leerergebnisse, keine Wiederholung dauerhafter Fehler, Datumsüberlauf (der 31. Februar wurde zum 3. März), Namensabgleich über alle 24 echten Ausschussbezeichnungen, Aufbewahrung, sichtbare Teilausfälle und unvollständige API-Antworten.

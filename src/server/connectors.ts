@@ -1,19 +1,20 @@
 import {SOURCES,COMMITTEES,MINISTRIES,committeeByKuerzel,type Source,type DocumentInput} from '../model';
 import {parseFeed,parseCommitteeEvents,parseAgendaTable,officialURL,clean} from './parsing';
 export function configuredSources():Source[]{return SOURCES.map(s=>({...s,...(s.kind==='rss'&&s.env&&process.env[s.env]?{feed:process.env[s.env]}:{})}));}
+export class PermanentSourceError extends Error {}
 export async function fetchOfficial(url:string,headers:Record<string,string>={}):Promise<string>{
- if(!officialURL(url))throw new Error('Nur freigegebene amtliche HTTPS-Domains erlaubt');
+ if(!officialURL(url))throw new PermanentSourceError('Nur freigegebene amtliche HTTPS-Domains erlaubt');
  for(let attempt=0;attempt<3;attempt++){
  try{
  let next=url;
  for(let hop=0;hop<4;hop++){
  const r=await fetch(next,{redirect:'manual',headers:{'User-Agent':'PolicyMonitor/1.0 (public-source monitoring)',...headers},signal:AbortSignal.timeout(10000)});
  if([301,302,303,307,308].includes(r.status)){
- const loc=r.headers.get('location'); if(!loc)throw new Error('Leere Weiterleitung');
+ const loc=r.headers.get('location'); if(!loc)throw new PermanentSourceError('Leere Weiterleitung');
  const target=new URL(loc,next).href;
- if(!officialURL(target)||new URL(target).origin!==new URL(url).origin&&Object.keys(headers).length)throw new Error('Weiterleitung nicht freigegeben'); next=target;continue;
+ if(!officialURL(target)||new URL(target).origin!==new URL(url).origin&&Object.keys(headers).length)throw new PermanentSourceError('Weiterleitung nicht freigegeben'); next=target;continue;
  }
- if(!r.ok)throw new Error(`Quellenabruf HTTP ${r.status}`);
+ if(!r.ok)throw r.status>=400&&r.status<500?new PermanentSourceError(`Quellenabruf HTTP ${r.status}`):new Error(`Quellenabruf HTTP ${r.status}`);
  if(Number(r.headers.get('content-length')??0)>4000000)throw new Error('Quelle überschreitet 4 MB');
  const reader=r.body?.getReader();if(!reader)throw new Error('Leere Antwort');
  let size=0; const chunks:Uint8Array[]=[];
@@ -21,7 +22,7 @@ export async function fetchOfficial(url:string,headers:Record<string,string>={})
  return Buffer.concat(chunks).toString('utf8');
  }
  throw new Error('Zu viele Weiterleitungen');
- }catch(e){if(attempt===2)throw e;await new Promise(r=>setTimeout(r,500*2**attempt));}
+ }catch(e){if(attempt===2||e instanceof PermanentSourceError)throw e;await new Promise(r=>setTimeout(r,500*2**attempt));}
  }throw new Error('Abruf fehlgeschlagen');
 }
 const WAHLPERIODE=Number(process.env.DIP_WAHLPERIODE??21);
@@ -33,7 +34,7 @@ export function lookbackStart(checkedAt?:string):string{
 async function dipPages(endpoint:string,since:string,onPage:(docs:any[])=>void):Promise<void>{
  if(!process.env.DIP_API_KEY)throw new Error('DIP_API_KEY fehlt');
  let cursor:string|undefined;
- for(let page=0;page<40;page++){
+ for(let page=0;page<100;page++){
  const u=new URL(`https://search.dip.bundestag.de/api/v1/${endpoint}`);
  u.searchParams.set('f.wahlperiode',String(WAHLPERIODE));u.searchParams.set('f.aktualisiert.start',since);u.searchParams.set('format','json');
  if(cursor)u.searchParams.set('cursor',cursor);
@@ -108,7 +109,7 @@ export async function agendaDocuments():Promise<DocumentInput[]>{
 }
 // Anhoerungen und oeffentliche Sitzungen je ausgewaehltem Ausschuss. Eine leere Liste ist ein Fehler:
 // bricht das CMS die Struktur, faellt das auf, statt still nichts zu liefern.
-export async function eventDocuments():Promise<DocumentInput[]>{
+export async function eventDocuments(warn?:(note:string)=>void):Promise<DocumentInput[]>{
  const withEvents=COMMITTEES.filter(c=>c.events);
  const docs:DocumentInput[]=[];const failed:string[]=[];
  for(const c of withEvents){
@@ -122,14 +123,15 @@ export async function eventDocuments():Promise<DocumentInput[]>{
  }catch(e){failed.push(`${c.short}: ${e instanceof Error?e.message:'Abruf fehlgeschlagen'}`);}
  }
  if(failed.length>withEvents.length/2)throw new Error(`Terminlisten überwiegend nicht lesbar (${failed.slice(0,3).join('; ')})`);
- if(failed.length)console.warn(JSON.stringify({event:'committee_events_partial',failed}));
+ // Ein einzelner Ausschuss, dessen Liste bricht, darf nicht unbemerkt aus der App verschwinden.
+ if(failed.length)warn?.(`${failed.length} von ${withEvents.length} Terminlisten nicht lesbar: ${failed.join('; ')}`);
  return docs;
 }
-export async function ingest(source:Source,since:string):Promise<DocumentInput[]>{
+export async function ingest(source:Source,since:string,warn?:(note:string)=>void):Promise<DocumentInput[]>{
  if(source.kind==='committee-dip')return committeeDocuments(since);
  if(source.kind==='ministry-dip')return ministryDocuments(since);
  if(source.kind==='committee-agenda')return agendaDocuments();
- if(source.kind==='committee-events')return eventDocuments();
+ if(source.kind==='committee-events')return eventDocuments(warn);
  if(source.kind==='rss'&&source.feed)return parseFeed(await fetchOfficial(source.feed),source.feed);
  throw new Error('Manuelle Ergänzung erforderlich');
 }
