@@ -1,8 +1,7 @@
 node_modules/
 .next/
 out/
-data/*
-!data/monitor.db
+data/
 .env*
 !.env.example
 *.tsbuildinfo

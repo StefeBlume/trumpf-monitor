@@ -15,7 +15,7 @@ export default async function handler(req:NextApiRequest,res:NextApiResponse){
  try{
  if(route==='dashboard'&&req.method==='GET'){res.json(await dashboard());return;}
  if(route==='run'&&req.method==='POST'){res.json({briefing:await runMonitor()});return;}
- if(route==='cron'&&req.method==='GET'){res.json({briefing:await runMonitor({cron:true})});return;}
+ if(route==='cron'&&req.method==='GET'){res.json({briefing:await runMonitor()});return;}
  if(route.startsWith('history/')&&req.method==='GET'){res.json(await history(z.string().regex(/^[a-f0-9]{24}$/).parse(route.split('/')[1])));return;}
  if(route.startsWith('items/')&&req.method==='PATCH'){const body=z.object({archived:z.boolean()}).strict().parse(req.body);await archive(z.string().regex(/^[a-f0-9]{24}$/).parse(route.split('/')[1]),body.archived);res.json({ok:true});return;}
  res.status(404).json({error:'Nicht gefunden'});

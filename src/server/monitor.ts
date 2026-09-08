@@ -14,13 +14,11 @@ export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed
  const named=[...committees].map(id=>committeeById(id)?.short).filter(Boolean).slice(0,4).join(', ');
  return `${head}${changes.length} neue oder geänderte Dokumente${committees.size?` in ${committees.size} ausgewählten Ausschüssen (${named}${committees.size>4?' u. a.':''})`:''}. ${coverage}`;
 }
-export async function runMonitor(options:{cron?:boolean; sources?:Source[]; fetcher?:(s:Source,since:string)=>Promise<DocumentInput[]>}={}):Promise<Briefing|null>{
+export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,since:string)=>Promise<DocumentInput[]>}={}):Promise<Briefing|null>{
  const c=await db(),id=randomUUID(),clock=berlinClock();
- if(options.cron&&clock.hour!==6)return null;
  const lock=await c.execute({sql:'INSERT INTO locks(id,owner,expires) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,expires=excluded.expires WHERE locks.expires < ?',args:['monitor',id,Date.now()+600000,Date.now()]});
  if(!lock.rowsAffected)throw new Error('Ein Quellenlauf ist bereits aktiv.');
  try{
- if(options.cron&&(await c.execute({sql:'SELECT day FROM cron_days WHERE day=?',args:[clock.day]})).rows.length)return null;
  const all=options.sources??configuredSources();const initial=await dashboard();const existing=new Map(initial.items.map(i=>[i.id,i]));const states=new Map(initial.sources.map(s=>[s.id,s]));
  const updated:Item[]=[];let ok=0,failed=0,manual=0;const errors:string[]=[];
  for(const source of all){
@@ -50,10 +48,29 @@ export async function runMonitor(options:{cron?:boolean; sources?:Source[]; fetc
  await c.execute({sql:'UPDATE locks SET expires=? WHERE id=? AND owner=?',args:[Date.now()+600000,'monitor',id]});
  }
  const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated,coverage:{ok,failed,manual},errors};
- await c.execute({sql:'INSERT INTO briefings(id,day,data) VALUES(?,?,?)',args:[id,clock.day,JSON.stringify(b)]});
- if(options.cron)await c.execute({sql:'INSERT OR IGNORE INTO cron_days(day,completed_at) VALUES(?,?)',args:[clock.day,b.createdAt]});
+ // Bei stuendlichen Laeufen wuerde jeder Lauf ein Briefing schreiben und die Liste zumuellen.
+ // Gespeichert wird deshalb nur, was etwas gebracht hat - plus ein Tageseintrag, damit auch
+ // ruhige Tage dokumentiert bleiben.
+ const first=!(await c.execute({sql:'SELECT id FROM briefings WHERE day=? LIMIT 1',args:[clock.day]})).rows.length;
+ if(updated.length||first)await c.execute({sql:'INSERT INTO briefings(id,day,data) VALUES(?,?,?)',args:[id,clock.day,JSON.stringify(b)]});
  return b;
  }finally{await c.execute({sql:'DELETE FROM locks WHERE id=? AND owner=?',args:['monitor',id]});}
 }
 export async function history(itemId:string){const c=await db();const r=await c.execute({sql:'SELECT data FROM versions WHERE item_id=? ORDER BY version DESC',args:[itemId]});const versions:Item[]=r.rows.map(r=>JSON.parse(String(r.data)));const render=(v:Item)=>[v.title,v.documentType,v.step??'',v.procedure??'',v.documentNumber??'',v.text].join('\n');return {versions,diff:versions.length>1?diffWords(render(versions[1]),render(versions[0])):[]};}
 export async function archive(itemId:string,archived:boolean){const c=await db();const row=await c.execute({sql:'SELECT data FROM items WHERE id=?',args:[itemId]});if(!row.rows.length)throw new Error('Treffer nicht gefunden');const item=JSON.parse(String(row.rows[0].data));await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...item,archived}),itemId]});}
+
+// Die Datenbank ist ableitbarer Zwischenstand und wird nicht versioniert. Fehlt sie - etwa weil der
+// Zwischenspeicher des Zeitplans verfallen ist -, wird sie aus dem veroeffentlichten Stand aufgebaut,
+// damit bereits bekannte Dokumente nicht erneut als neu gemeldet werden.
+export async function seedFromSnapshot(snapshot:{items?:Item[];events?:Event[];briefings?:Briefing[]}):Promise<number>{
+ const c=await db();
+ const items=snapshot.items??[];
+ if(!items.length)return 0;
+ if((await c.execute('SELECT id FROM items LIMIT 1')).rows.length)return 0;
+ await c.batch([
+ ...items.map(i=>({sql:'INSERT OR REPLACE INTO items(id,source_id,data) VALUES(?,?,?)',args:[i.id,i.sourceId,JSON.stringify({...i,change:'unchanged' as const})]})),
+ ...(snapshot.events??[]).map(e=>({sql:'INSERT OR REPLACE INTO events(id,run_id,data) VALUES(?,?,?)',args:[e.id,'snapshot',JSON.stringify(e)]})),
+ ...(snapshot.briefings??[]).map(b=>({sql:'INSERT OR REPLACE INTO briefings(id,day,data) VALUES(?,?,?)',args:[b.id,b.day,JSON.stringify(b)]}))
+ ],'write');
+ return items.length;
+}

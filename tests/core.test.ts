@@ -2,7 +2,7 @@ import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {parseFeed,contentHash,officialURL,germanDate,parseCommitteeEvents,parseAgendaTable} from '../src/server/parsing';
 import {mapCommitteePosition,mapMinistryDrucksache,matchCommitteeName,lookbackStart} from '../src/server/connectors';
-import {berlinClock,runMonitor,dashboard,history,briefingSummary} from '../src/server/monitor';
+import {berlinClock,runMonitor,dashboard,history,briefingSummary,seedFromSnapshot} from '../src/server/monitor';
 import {resetDBForTests} from '../src/server/db';import {COMMITTEES,MINISTRIES,type DocumentInput,type Item,type Source} from '../src/model';
 const doc:DocumentInput={externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',url:'https://www.bundestag.de/test',text:'',publishedAt:null,documentType:'Gesetzentwurf',step:'Gesetzentwurf',procedure:'Gesetzgebung',documentNumber:'21/1234',pdfUrl:null,committees:['we'],lead:'we',ministries:[],originator:'Bundesregierung'};
 // Aus einer echten DIP-Vorgangsposition gekürzt.
@@ -111,4 +111,32 @@ test('Ein leeres Ergebnis wird als geprüft gewertet, nicht als Fehler',async()=
  assert.equal(run?.coverage.ok,1);assert.equal(run?.coverage.failed,0);
  assert.match(run!.summary,/Keine neuen oder geänderten Dokumente/);
  assert.equal((await dashboard()).sources.find(s=>s.id==='dip-committees')?.status,'ok');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+test('Ohne Datenbank stellt der veröffentlichte Stand die bekannten Dokumente wieder her',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-seed-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const source:Source={id:'dip-committees',name:'Test',institution:'Test',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ try{
+ const first=await runMonitor({sources:[source],fetcher:async()=>[doc]});
+ const snapshot=await dashboard();
+ assert.equal(first?.items[0].change,'baseline');
+ // Zwischenspeicher verloren: frische Datenbank, aber der veröffentlichte Stand ist noch da.
+ await resetDBForTests();rmSync(join(dir,'test.db'),{force:true});
+ assert.equal(await seedFromSnapshot(snapshot),1);
+ const second=await runMonitor({sources:[source],fetcher:async()=>[doc]});
+ assert.equal(second?.items.length,0,'bekanntes Dokument darf nicht erneut als neu gelten');
+ // Ein zweiter Aufbau darf einen vorhandenen Bestand nicht überschreiben.
+ assert.equal(await seedFromSnapshot(snapshot),0);
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+test('Bei stündlichen Läufen entsteht je Tag ein Briefing plus eines je Änderung',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-briefings-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const source:Source={id:'dip-committees',name:'Test',institution:'Test',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ try{
+ await runMonitor({sources:[source],fetcher:async()=>[doc]});
+ assert.equal((await dashboard()).briefings.length,1,'Erstlauf wird dokumentiert');
+ for(let i=0;i<3;i++)await runMonitor({sources:[source],fetcher:async()=>[doc]});
+ assert.equal((await dashboard()).briefings.length,1,'ruhige Läufe erzeugen keine weiteren Einträge');
+ await runMonitor({sources:[source],fetcher:async()=>[{...doc,externalId:'2',title:'Neue Vorlage'}]});
+ assert.equal((await dashboard()).briefings.length,2,'eine Änderung wird dokumentiert');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});

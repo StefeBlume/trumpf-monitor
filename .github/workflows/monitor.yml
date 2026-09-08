@@ -2,9 +2,9 @@ name: Quellen prüfen und veröffentlichen
 
 on:
   schedule:
-    # GitHub plant in UTC. 04:00 und 05:00 UTC decken 06:00 Berliner Zeit in Sommer- und Winterzeit ab;
-    # der Lauf selbst prüft die Berliner Stunde und läuft höchstens einmal je Kalendertag.
-    - cron: '0 4,5 * * *'
+    # GitHub plant in UTC. 04:00–18:00 UTC sind 06:00–20:00 Berliner Zeit im Sommer,
+    # 05:00–19:00 im Winter. Also stündlich über den ganzen Arbeitstag.
+    - cron: '0 4-18 * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -32,24 +32,35 @@ jobs:
           cache: npm
       - run: npm ci
 
+      # Die Datenbank ist ableitbarer Zwischenstand und wird nicht versioniert, sonst wuchse das
+      # Repository bei stündlichen Läufen um Hunderte MB im Jahr. Fehlt der Zwischenspeicher,
+      # baut der Lauf sie aus public/bootstrap.json wieder auf.
+      - uses: actions/cache@v4
+        with:
+          path: data
+          key: monitor-db-${{ github.run_id }}
+          restore-keys: monitor-db-
+
       - name: Quellen abrufen
+        id: run
         env:
           DIP_API_KEY: ${{ secrets.DIP_API_KEY }}
           DATABASE_URL: file:data/monitor.db
-        # Bei push und manuellem Start ohne Zeitfenster-Sperre, damit der erste Stand sofort entsteht.
-        run: npm run ${{ github.event_name == 'schedule' && 'monitor:cron' || 'monitor' }}
+        run: npm run monitor
 
       - name: Neuen Stand sichern
+        if: steps.run.outputs.changed == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/monitor.db public/bootstrap.json
-          git diff --staged --quiet || git commit -m "Quellenstand $(date -u +%Y-%m-%d)"
+          git add public/bootstrap.json
+          git diff --staged --quiet || git commit -m "Quellenstand $(date -u +'%Y-%m-%d %H:%M') UTC"
           git push
 
       - name: Seite bauen
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ github.event.repository.name != format('{0}.github.io', github.repository_owner) && format('/{0}', github.event.repository.name) || '' }}
+          NEXT_PUBLIC_REPO: ${{ github.repository }}
         run: npm run build:pages
 
       - uses: actions/configure-pages@v5

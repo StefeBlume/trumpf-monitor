@@ -49,9 +49,9 @@ npm run dev                  # http://localhost:4180
 | `DIP_WAHLPERIODE` | nein | Standard 21 |
 | `BAFA_FEED_URL` | nein | Abweichende amtliche Feed-URL |
 
-### Morgenlauf
+### Zeitplan
 
-`vercel.json` ruft `/api/cron` auf; `runMonitor({cron:true})` läuft nur zur 6. Stunde Europe/Berlin und höchstens einmal pro Kalendertag (`cron_days`). Der Cron-Aufruf braucht `Authorization: Bearer $CRON_SECRET`.
+Die Zeitsteuerung liegt beim Scheduler, nicht im Code: `runMonitor()` läuft, wann immer es aufgerufen wird, und schützt sich nur über eine Sperre gegen parallele Läufe. `vercel.json` ruft `/api/cron` auf; der Aufruf braucht `Authorization: Bearer $CRON_SECRET`.
 
 ## Änderungserkennung
 
@@ -65,7 +65,7 @@ Ein Erstimport ist kein Fund. Die Zusammenfassung sagt das ausdrücklich.
 - **Keine PDF-Volltexte.** Erfasst werden Metadaten und der Link; der Inhalt der Drucksachen wird nicht ausgewertet.
 - **Der BAFA-Feed liefert kein Veröffentlichungsdatum.** Die App zeigt dort „Kein Datum in der Quelle" statt ein Datum aus der URL zu raten.
 - **Der Auswärtige Ausschuss führt keine öffentliche Terminliste.** Er tagt überwiegend nicht öffentlich; seine Sitzungen erscheinen nur über die Tagesordnungsliste.
-- **Die Datenbank wächst unbegrenzt.** Erfasste Dokumente werden nicht automatisch entfernt. Bei Bedarf `data/monitor.db` löschen und neu aufsetzen; der nächste Lauf legt einen frischen Ausgangsstand an.
+- **Die Datenbank wächst unbegrenzt.** Erfasste Dokumente werden nicht automatisch entfernt. Bei Bedarf `data/monitor.db` und `public/bootstrap.json` löschen; der nächste Lauf legt einen frischen Ausgangsstand an.
 - **EUR-Lex und Have Your Say sind nicht angebunden.** Beides liegt außerhalb der Ausschuss- und Ressortauswahl; EU-Vorlagen erscheinen nur, soweit sie an einen ausgewählten Ausschuss überwiesen wurden.
 - **Keine Meldung ist kein Entwarnungsnachweis.** Die Anzeige gilt nur für die ausgewählten Gremien und die erfolgreich abgerufenen Quellen. Fehlgeschlagene Abrufe werden pro Quelle mit Fehlertext ausgewiesen.
 
@@ -77,9 +77,13 @@ Für die Nutzung auf dem Handy ohne laufenden Mac baut `.github/workflows/monito
 2. Unter **Settings → Secrets and variables → Actions** das Secret `DIP_API_KEY` setzen.
 3. Unter **Settings → Pages** als Quelle **GitHub Actions** wählen.
 
-Der Workflow ruft täglich die Quellen ab, schreibt `data/monitor.db` und `public/bootstrap.json` zurück ins Repository und veröffentlicht den Export. Der Zeitplan feuert um 04:00 und 05:00 UTC; `npm run monitor:cron` läuft nur zur 6. Stunde Europe/Berlin und höchstens einmal je Kalendertag, sodass Sommer- und Winterzeit abgedeckt sind.
+Der Workflow läuft stündlich von 04:00 bis 18:00 UTC, also 06:00 bis 20:00 Berliner Zeit im Sommer und 05:00 bis 19:00 im Winter.
 
-Die veröffentlichte Seite ist **nur lesend**: Quellenlauf, Archivieren und Versionsvergleich brauchen den Server und sind ausgeblendet. Sie ist außerdem **öffentlich erreichbar** — die angezeigten Dokumente sind amtlich und öffentlich, die Auswahl der Gremien ist es damit auch.
+**Was versioniert wird und was nicht.** `data/monitor.db` ist ableitbarer Zwischenstand und steht in `.gitignore`; bei stündlichen Läufen würde die Binärdatei das Repository um mehrere hundert MB im Jahr aufblähen. Zwischen den Läufen hält `actions/cache` sie vor. Versioniert wird nur `public/bootstrap.json`, und zwar ausschließlich, wenn der Lauf neue oder geänderte Dokumente gefunden hat. Fehlt die Datenbank — etwa nach Ablauf des Zwischenspeichers —, baut `seedFromSnapshot` sie aus `public/bootstrap.json` wieder auf, damit bereits bekannte Dokumente nicht erneut als neu gemeldet werden.
+
+**Briefings.** Bei stündlichen Läufen würde jeder Lauf einen Eintrag erzeugen. Gespeichert wird deshalb nur ein Briefing je Tag plus eines je Lauf mit tatsächlichen Änderungen.
+
+Die veröffentlichte Seite ist **nur lesend**. „Stand neu laden" holt `bootstrap.json` erneut, löst aber keinen Quellenabruf aus — dafür fehlt der Server. Einen echten Lauf startet der Link „Quellenlauf auf GitHub starten" über `workflow_dispatch`. Ein Knopf, der direkt aus der Seite heraus abruft, bräuchte einen hinterlegten Zugangsschlüssel und ist auf einer öffentlichen statischen Seite deshalb ausgeschlossen. Archivieren und Versionsvergleich brauchen ebenfalls den Server und sind ausgeblendet. Sie ist außerdem **öffentlich erreichbar** — die angezeigten Dokumente sind amtlich und öffentlich, die Auswahl der Gremien ist es damit auch.
 
 Lokal prüfen:
 
