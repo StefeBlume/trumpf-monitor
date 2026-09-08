@@ -3,7 +3,7 @@ import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
 import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash} from './parsing';
 export function berlinClock(date=new Date()){const parts=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(date);const get=(t:string)=>parts.find(p=>p.type===t)!.value;return {day:`${get('year')}-${get('month')}-${get('day')}`,hour:Number(get('hour'))};}
-export async function dashboard():Promise<Dashboard>{const c=await db();const [items,states,briefings,events]=await Promise.all([c.execute('SELECT data FROM items'),c.execute('SELECT id,data FROM source_state'),c.execute('SELECT data FROM briefings ORDER BY rowid DESC LIMIT 60'),c.execute('SELECT data FROM events ORDER BY rowid DESC LIMIT 300')]);const state=new Map(states.rows.map(s=>[s.id,JSON.parse(String(s.data))]));return {items:items.rows.map(r=>JSON.parse(String(r.data))),sources:configuredSources().map(s=>({...s,...state.get(s.id),status:state.get(s.id)?.status??(s.kind==='manual'?'manual':s.env&&!process.env[s.env]&&s.kind!=='rss'?'setup':'pending')})),briefings:briefings.rows.map(r=>JSON.parse(String(r.data))),events:events.rows.map(r=>JSON.parse(String(r.data))),serverTime:new Date().toISOString(),scheduleEnabled:process.env.SCHEDULE_ENABLED==='true'};}
+export async function dashboard():Promise<Dashboard>{const c=await db();const [items,states,briefings,events]=await Promise.all([c.execute('SELECT data FROM items'),c.execute('SELECT id,data FROM source_state'),c.execute('SELECT data FROM briefings ORDER BY rowid DESC LIMIT 60'),c.execute('SELECT data FROM events ORDER BY rowid DESC LIMIT 300')]);const state=new Map(states.rows.map(s=>[s.id,JSON.parse(String(s.data))]));return {items:items.rows.map(r=>JSON.parse(String(r.data))),sources:configuredSources().map(s=>({...s,...state.get(s.id),status:state.get(s.id)?.status??(s.kind==='manual'?'manual':s.env&&!process.env[s.env]&&s.kind!=='rss'?'setup':'pending')})),briefings:briefings.rows.map(r=>JSON.parse(String(r.data))).sort((a:Briefing,b:Briefing)=>b.createdAt.localeCompare(a.createdAt)),events:events.rows.map(r=>JSON.parse(String(r.data))).sort((a:Event,b:Event)=>b.at.localeCompare(a.at)),serverTime:new Date().toISOString(),scheduleEnabled:process.env.SCHEDULE_ENABLED==='true'};}
 export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed:number,manual:number):string{
  if(!ok)return 'Keine belastbare Aussage: Es konnte keine Quelle erfolgreich geprüft werden.';
  const changes=updated.filter(i=>i.change!=='baseline');
@@ -51,11 +51,11 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const retention=options.retentionDays??Number(process.env.RETENTION_DAYS??180);
  if(retention>0&&ok)await prune(retention);
  const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated,coverage:{ok,failed,manual},errors};
- // Bei stuendlichen Laeufen wuerde jeder Lauf ein Briefing schreiben und die Liste zumuellen.
- // Gespeichert wird deshalb nur, was etwas gebracht hat - plus ein Tageseintrag, damit auch
- // ruhige Tage dokumentiert bleiben.
- const first=!(await c.execute({sql:'SELECT id FROM briefings WHERE day=? LIMIT 1',args:[clock.day]})).rows.length;
- if(updated.length||first)await c.execute({sql:'INSERT INTO briefings(id,day,data) VALUES(?,?,?)',args:[id,clock.day,JSON.stringify(b)]});
+ // Jeder Lauf wird dokumentiert, sonst zeigt das Lagebild die Meldung eines aelteren Laufs neben
+ // dem Zeitstempel des juengsten - genau dieser Widerspruch war in der Oberflaeche sichtbar.
+ // Damit die Liste nicht zulaeuft, ersetzt ein Lauf ohne Aenderung den vorherigen Leerlauf des Tages.
+ if(!updated.length)await c.execute({sql:"DELETE FROM briefings WHERE day=? AND json_array_length(json_extract(data,'$.items'))=0",args:[clock.day]});
+ await c.execute({sql:'INSERT INTO briefings(id,day,data) VALUES(?,?,?)',args:[id,clock.day,JSON.stringify(b)]});
  return b;
  }finally{await c.execute({sql:'DELETE FROM locks WHERE id=? AND owner=?',args:['monitor',id]});}
 }

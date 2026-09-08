@@ -143,16 +143,22 @@ test('Ohne Datenbank stellt der veröffentlichte Stand die bekannten Dokumente w
  assert.equal(await seedFromSnapshot(snapshot),0);
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
-test('Bei stündlichen Läufen entsteht je Tag ein Briefing plus eines je Änderung',async()=>{
+test('Jeder Lauf wird dokumentiert, Leerläufe ersetzen einander statt sich zu häufen',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'policy-briefings-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
  const source:Source={id:'dip-committees',name:'Test',institution:'Test',url:doc.url,kind:'committee-dip',note:'Fixture'};
  try{
  await runMonitor({sources:[source],fetcher:async()=>[doc]});
  assert.equal((await dashboard()).briefings.length,1,'Erstlauf wird dokumentiert');
  for(let i=0;i<3;i++)await runMonitor({sources:[source],fetcher:async()=>[doc]});
- assert.equal((await dashboard()).briefings.length,1,'ruhige Läufe erzeugen keine weiteren Einträge');
+ const ruhig=(await dashboard()).briefings;
+ assert.equal(ruhig.length,2,'ein Änderungslauf plus genau ein aktueller Leerlauf');
+ // Der Kopf des Lagebilds muss den juengsten Lauf zeigen, nicht die letzte Meldung.
+ assert.equal(ruhig[0].items.length,0);
+ assert.match(ruhig[0].summary,/Keine neuen oder geänderten Dokumente/);
  await runMonitor({sources:[source],fetcher:async()=>[{...doc,externalId:'2',title:'Neue Vorlage'}]});
- assert.equal((await dashboard()).briefings.length,2,'eine Änderung wird dokumentiert');
+ const nach=(await dashboard()).briefings;
+ assert.equal(nach.length,3,'eine Änderung wird zusätzlich dokumentiert');
+ assert.equal(nach[0].items.length,1,'der neueste Eintrag ist der Änderungslauf');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
 // Der Fehler, der die Anhoerung zum Waermeplanungsgesetz unsichtbar machte: beim Lauf bekommen alle
@@ -175,3 +181,21 @@ test('Liste ordnet nach Bewegung der Quelle, nicht nach dem eigenen Lauf',()=>{
  assert.equal(recency(ohneDatum),'2026-08-20T09:00:00.000Z');
  assert.notEqual(recency(ohneDatum),ohneDatum.changedAt);
 });
+
+// Nach einem Wiederaufbau folgen die Zeilen der Einfuegereihenfolge, nicht der Zeit. Ohne Sortierung
+// zeigt die Briefing-Auswahl die Staende durcheinander.
+test('Briefings und Änderungslog kommen chronologisch, auch nach Wiederaufbau',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-order-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const source:Source={id:'dip-committees',name:'T',institution:'T',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ try{
+ await runMonitor({sources:[source],fetcher:async()=>[doc]});
+ await runMonitor({sources:[source],fetcher:async()=>[{...doc,step:'Zweite Beratung'}]});
+ const snapshot=await dashboard();
+ await resetDBForTests();rmSync(join(dir,'test.db'),{force:true});
+ await seedFromSnapshot({...snapshot,briefings:[...snapshot.briefings].reverse(),events:[...snapshot.events].reverse()});
+ const nach=await dashboard();
+ const zeiten=nach.briefings.map(b=>b.createdAt);
+ assert.deepEqual(zeiten,[...zeiten].sort().reverse(),'Briefings müssen absteigend nach Zeit stehen');
+ const log=nach.events.map(e=>e.at);
+ assert.deepEqual(log,[...log].sort().reverse(),'das Änderungslog muss absteigend nach Zeit stehen');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
