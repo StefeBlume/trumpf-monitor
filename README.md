@@ -86,7 +86,7 @@ Der Workflow läuft alle 30 Minuten von 04:00 bis 20:00 UTC, also 06:00 bis 22:0
 
 **Was versioniert wird und was nicht.** `data/monitor.db` ist ableitbarer Zwischenstand und steht in `.gitignore`; bei halbstündlichen Läufen würde die Binärdatei das Repository um mehrere hundert MB im Jahr aufblähen. Zwischen den Läufen hält `actions/cache` sie vor. Versioniert wird nur `public/bootstrap.json`, und zwar ausschließlich, wenn der Lauf neue oder geänderte Dokumente gefunden hat. Fehlt die Datenbank — etwa nach Ablauf des Zwischenspeichers —, baut `seedFromSnapshot` sie aus `public/bootstrap.json` wieder auf, damit bereits bekannte Dokumente nicht erneut als neu gemeldet werden.
 
-**Briefings.** Bei halbstündlichen Läufen würde jeder Lauf einen Eintrag erzeugen. Gespeichert wird deshalb nur ein Briefing je Tag plus eines je Lauf mit tatsächlichen Änderungen.
+**Briefings.** Jeder Lauf schreibt ein Briefing, damit das Lagebild immer den jüngsten Lauf beschreibt. Damit die Liste bei halbstündlichen Läufen nicht zuläuft, ersetzt ein Lauf ohne Änderung den vorherigen Leerlauf desselben Tages. Briefings und Änderungslog werden nach Zeit sortiert ausgeliefert — nach einem Wiederaufbau folgen die Zeilen sonst der Einfügereihenfolge.
 
 Die veröffentlichte Seite ist **nur lesend**. „Stand neu laden" holt `bootstrap.json` erneut, löst aber keinen Quellenabruf aus — dafür fehlt der Server. Einen echten Lauf startet der Link „Quellenlauf auf GitHub starten" über `workflow_dispatch`. Ein Knopf, der direkt aus der Seite heraus abruft, bräuchte einen hinterlegten Zugangsschlüssel und ist auf einer öffentlichen statischen Seite deshalb ausgeschlossen. Archivieren und Versionsvergleich brauchen ebenfalls den Server und sind ausgeblendet. Sie ist außerdem **öffentlich erreichbar** — die angezeigten Dokumente sind amtlich und öffentlich, die Auswahl der Gremien ist es damit auch.
 
@@ -102,6 +102,6 @@ NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
 npm test
 ```
 
-36 Tests in zwei Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+37 Tests in zwei Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
 
 `tests/hardening.test.ts` deckt die Randfälle ab, die im Audit aufgefallen sind: fremde Adressen aus fremdem Markup, unsichtbare Trennzeichen, Formatbrüche gegen legitime Leerergebnisse, keine Wiederholung dauerhafter Fehler, Datumsüberlauf (der 31. Februar wurde zum 3. März), Namensabgleich über alle 24 echten Ausschussbezeichnungen, Aufbewahrung, sichtbare Teilausfälle und unvollständige API-Antworten.
