@@ -4,9 +4,10 @@ import {parseFeed,contentHash,officialURL,germanDate,parseCommitteeEvents,parseA
 import {mapCommitteePosition,mapMinistryDrucksache,matchCommitteeName,lookbackStart} from '../src/server/connectors';
 import {berlinClock,runMonitor,dashboard,history,briefingSummary,seedFromSnapshot} from '../src/server/monitor';
 import {resetDBForTests} from '../src/server/db';import {COMMITTEES,MINISTRIES,type DocumentInput,type Item,type Source} from '../src/model';
-const doc:DocumentInput={externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',url:'https://www.bundestag.de/test',text:'',publishedAt:null,documentType:'Gesetzentwurf',step:'Gesetzentwurf',procedure:'Gesetzgebung',documentNumber:'21/1234',pdfUrl:null,committees:['we'],lead:'we',ministries:[],originator:'Bundesregierung'};
+const doc:DocumentInput={externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',url:'https://www.bundestag.de/test',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',step:'Gesetzentwurf',procedure:'Gesetzgebung',documentNumber:'21/1234',pdfUrl:null,committees:['we'],lead:'we',ministries:[],originator:'Bundesregierung'};
 // Aus einer echten DIP-Vorgangsposition gekürzt.
 const position={id:'698164',vorgangsposition:'Unterrichtung',vorgangstyp:'EU-Vorlage',titel:'Vorschlag für eine Verordnung',vorgang_id:'338133',datum:'2026-08-04',
+ aktualisiert:'2026-09-05T10:39:50+02:00',
  ueberweisung:[{ausschuss:'Ausschuss für Wirtschaft und Energie',ausschuss_kuerzel:'AfWE',federfuehrung:true},{ausschuss:'Verkehrsausschuss',ausschuss_kuerzel:'VerkA',federfuehrung:false},{ausschuss:'Finanzausschuss',ausschuss_kuerzel:'FinanzA',federfuehrung:false}],
  fundstelle:{dokumentnummer:'426/26',drucksachetyp:'Unterrichtung',urheber:['Europäische Kommission'],pdf_url:'https://dserver.bundestag.de/brd/2026/0426-26.pdf'}};
 
@@ -31,6 +32,10 @@ test('Überweisung wird nur für ausgewählte Ausschüsse übernommen',()=>{
  assert.equal(m.documentNumber,'426/26');
  assert.equal(m.pdfUrl,'https://dserver.bundestag.de/brd/2026/0426-26.pdf');
  assert.equal(m.step,'Unterrichtung');
+ // Ein im Mai veroeffentlichtes Papier, das im September neu ueberwiesen wird, ist eine aktuelle
+ // Bewegung. Ohne aktualisiert wuerde es hinter monatealtem Material einsortiert.
+ assert.equal(m.publishedAt?.slice(0,10),'2026-08-04');
+ assert.equal(m.updatedAt?.slice(0,10),'2026-09-05');
  assert.equal(mapCommitteePosition({...position,ueberweisung:[{ausschuss_kuerzel:'VerkA',federfuehrung:true}]}),null);
  // Querschnittsausschüsse zählen nur federführend, sonst schlägt Routine-Mitberatung als Treffer durch.
  assert.equal(mapCommitteePosition({...position,ueberweisung:[{ausschuss_kuerzel:'Wi',federfuehrung:false}]}),null);
@@ -87,7 +92,10 @@ test('Abruffenster überlappt den letzten Lauf und reicht höchstens 30 Tage zur
  assert.ok(Date.now()-Date.parse(lookbackStart(new Date('2020-01-01').toISOString()))<=30*86400000+1000);
  assert.doesNotThrow(()=>new Date(lookbackStart(undefined)).toISOString());
 });
-test('Metadata changes produce a new hash; whitespace does not',()=>{assert.equal(contentHash(doc),contentHash({...doc,title:'Gesetz zur  Änderung des Außenwirtschaftsgesetzes'}));assert.notEqual(contentHash(doc),contentHash({...doc,step:'Beschlussempfehlung und Bericht'}));assert.notEqual(contentHash(doc),contentHash({...doc,committees:['we','fi']}));});
+test('Metadata changes produce a new hash; whitespace does not',()=>{assert.equal(contentHash(doc),contentHash({...doc,title:'Gesetz zur  Änderung des Außenwirtschaftsgesetzes'}));assert.notEqual(contentHash(doc),contentHash({...doc,step:'Beschlussempfehlung und Bericht'}));assert.notEqual(contentHash(doc),contentHash({...doc,committees:['we','fi']}));
+ // updatedAt darf den Hash nicht beeinflussen: DIP setzt aktualisiert auch ohne inhaltliche
+ // Aenderung neu, sonst gaelte jedes Dokument dauerhaft als "Geaendert".
+ assert.equal(contentHash(doc),contentHash({...doc,updatedAt:'2026-09-08T12:00:00.000Z'}));});
 test('Zusammenfassung nennt Zahlen und Gremien, aber keine Relevanz',()=>{
  const item=(c:string[],change:string)=>({...doc,committees:c,change}) as unknown as Item;
  const s=briefingSummary([item(['we'],'new'),item(['fi'],'changed')],false,4,0,0);
@@ -140,3 +148,24 @@ test('Bei stündlichen Läufen entsteht je Tag ein Briefing plus eines je Änder
  await runMonitor({sources:[source],fetcher:async()=>[{...doc,externalId:'2',title:'Neue Vorlage'}]});
  assert.equal((await dashboard()).briefings.length,2,'eine Änderung wird dokumentiert');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Der Fehler, der die Anhoerung zum Waermeplanungsgesetz unsichtbar machte: beim Lauf bekommen alle
+// Treffer denselben changedAt, die Reihenfolge war damit praktisch zufaellig.
+test('Liste ordnet nach Bewegung der Quelle, nicht nach dem eigenen Lauf',()=>{
+ type Row={name:string;updatedAt:string|null;publishedAt:string|null;firstSeen:string;changedAt:string};
+ const recency=(i:Row)=>i.updatedAt??i.publishedAt??i.firstSeen;
+ const lauf='2026-09-08T07:10:34.000Z';
+ const items:Row[]=[
+ {name:'Mai-Unterrichtung',publishedAt:'2026-05-22T00:00:00.000Z',updatedAt:'2026-05-23T00:00:00.000Z',firstSeen:lauf,changedAt:lauf},
+ {name:'Anhörung Wärmeplanungsgesetz',publishedAt:'2026-09-08T00:00:00.000Z',updatedAt:'2026-09-08T00:00:00.000Z',firstSeen:lauf,changedAt:lauf},
+ {name:'BAFA ohne Datum',publishedAt:null,updatedAt:null,firstSeen:'2026-08-20T09:00:00.000Z',changedAt:lauf}
+ ];
+ const sorted=[...items].sort((a,b)=>recency(b).localeCompare(recency(a)));
+ assert.equal(sorted[0].name,'Anhörung Wärmeplanungsgesetz','der heutige Termin muss oben stehen');
+ assert.equal(sorted.at(-1)!.name,'Mai-Unterrichtung','das Mai-Papier gehoert nach unten');
+ // Ohne Quellendatum zaehlt der Erstkontakt. Faellt hier changedAt ein, wuerde die Meldung bei
+ // jedem Lauf nach oben springen und aktuelle Vorgaenge verdraengen.
+ const ohneDatum=items[2];
+ assert.equal(recency(ohneDatum),'2026-08-20T09:00:00.000Z');
+ assert.notEqual(recency(ohneDatum),ohneDatum.changedAt);
+});

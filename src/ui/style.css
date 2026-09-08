@@ -36,3 +36,13 @@
 .bottom-nav button{gap:4px;font-size:9px;padding:0 2px}
 .bottom-nav button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 }
+.upcoming{margin-bottom:34px}
+.upcoming .section-heading{margin-bottom:13px}
+.upcoming-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:13px}
+.upcoming-card{background:#fff;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:10px;padding:16px 18px;text-align:left;color:var(--ink);display:flex;flex-direction:column;gap:7px}
+.upcoming-card:hover{border-color:var(--blue)}
+.upcoming-date{font-size:11px;font-weight:650;letter-spacing:.6px;color:var(--blue);text-transform:uppercase}
+.upcoming-card strong{font-size:14px;font-weight:600;line-height:1.42;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.upcoming-body{font-size:12px;color:var(--muted);line-height:1.45}
+.moved{color:#8a6a2a}
+@media(max-width:760px){.upcoming-list{grid-template-columns:1fr}}

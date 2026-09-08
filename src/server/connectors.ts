@@ -52,7 +52,7 @@ export function mapCommitteePosition(d:any):DocumentInput|null{
  if(!referrals.length||!d?.id||!d?.titel)return null;
  const f=d.fundstelle??{};
  return {externalId:String(d.id),title:clean(d.titel),url:d.vorgang_id?`https://dip.bundestag.de/vorgang/${d.vorgang_id}`:`https://dip.bundestag.de/vorgangsposition/${d.id}`,
- text:'',publishedAt:iso(d.datum),documentType:clean(f.drucksachetyp??d.dokumentart??'Vorgangsposition'),step:d.vorgangsposition?clean(d.vorgangsposition):null,
+ text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(f.drucksachetyp??d.dokumentart??'Vorgangsposition'),step:d.vorgangsposition?clean(d.vorgangsposition):null,
  procedure:d.vorgangstyp?clean(d.vorgangstyp):null,documentNumber:f.dokumentnummer?clean(f.dokumentnummer):null,pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
  committees:[...new Set(referrals.map(r=>r.id))],lead:referrals.find(r=>r.lead)?.id??null,ministries:[],
  originator:(Array.isArray(f.urheber)?f.urheber:[]).map((u:unknown)=>clean(u)).join(', ')||null};
@@ -69,7 +69,7 @@ export function mapMinistryDrucksache(d:any):DocumentInput|null{
  const hit=MINISTRIES.filter(m=>originators.some(o=>m.match.some(x=>o.toLowerCase().includes(x))));
  if(!hit.length||!d?.id||!d?.titel)return null;
  return {externalId:String(d.id),title:clean(d.titel),url:`https://dip.bundestag.de/drucksache/${d.id}`,
- text:'',publishedAt:iso(d.datum),documentType:clean(d.drucksachetyp??d.dokumentart??'Drucksache'),step:null,procedure:null,
+ text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(d.drucksachetyp??d.dokumentart??'Drucksache'),step:null,procedure:null,
  documentNumber:d.dokumentnummer?clean(d.dokumentnummer):null,pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
  committees:[],lead:null,ministries:hit.map(m=>m.id),originator:originators.join(', ')||null};
 }
@@ -102,7 +102,7 @@ export async function agendaDocuments():Promise<DocumentInput[]>{
  const url=`${FILTERLIST}1061622-1061622?offset=0&limit=50&noFilterSet=true`;
  return parseAgendaTable(await fetchOfficial(url),url).flatMap(row=>{
  const id=matchCommitteeName(row.committee);
- return id?[{externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,documentType:'Tagesordnung',step:'Sitzungstermin',
+ return id?[{externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,updatedAt:row.date,documentType:'Tagesordnung',step:'Sitzungstermin',
  procedure:null,documentNumber:null,pdfUrl:row.url.endsWith('.pdf')?row.url:null,committees:[id],lead:id,ministries:[],originator:null}]:[];
  });
 }
@@ -116,7 +116,7 @@ export async function eventDocuments():Promise<DocumentInput[]>{
  try{
  const rows=parseCommitteeEvents(await fetchOfficial(url),url);
  if(!rows.length)throw new Error('keine Einträge im erwarteten Format');
- for(const row of rows)docs.push({externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,
+ for(const row of rows)docs.push({externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,updatedAt:row.date,
  documentType:'Ausschusstermin',step:'Anhörung oder Sitzung',procedure:null,documentNumber:null,pdfUrl:null,
  committees:[c.id],lead:c.id,ministries:[],originator:c.name});
  }catch(e){failed.push(`${c.short}: ${e instanceof Error?e.message:'Abruf fehlgeschlagen'}`);}

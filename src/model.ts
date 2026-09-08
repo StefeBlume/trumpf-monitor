@@ -37,7 +37,8 @@ export const committeeByKuerzel=(k:string)=>COMMITTEES.find(c=>c.kuerzel.include
 export type Change = 'baseline'|'new'|'changed'|'unchanged';
 export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'ministry-dip'|'committee-agenda'|'committee-events'|'rss'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number;}
 export interface DocumentInput {
- externalId:string; title:string; url:string; text:string; publishedAt:string|null;
+ externalId:string; title:string; url:string; text:string; publishedAt:string|null;      // Datum des Dokuments bzw. des Termins
+ updatedAt:string|null;        // Zeitpunkt der letzten Bewegung laut Quelle; treibt die Sortierung
  documentType:string;          // Drucksachentyp, z. B. Gesetzentwurf, Unterrichtung, Beschlussempfehlung
  step:string|null;             // Verfahrensschritt, z. B. Gesetzentwurf, 1. Beratung, Beschlussempfehlung und Bericht
  procedure:string|null;        // Beratungsstand laut DIP

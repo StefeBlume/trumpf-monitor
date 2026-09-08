@@ -77,11 +77,11 @@ Für die Nutzung auf dem Handy ohne laufenden Mac baut `.github/workflows/monito
 2. Unter **Settings → Secrets and variables → Actions** das Secret `DIP_API_KEY` setzen.
 3. Unter **Settings → Pages** als Quelle **GitHub Actions** wählen.
 
-Der Workflow läuft stündlich von 04:00 bis 18:00 UTC, also 06:00 bis 20:00 Berliner Zeit im Sommer und 05:00 bis 19:00 im Winter.
+Der Workflow läuft alle 30 Minuten von 04:00 bis 20:00 UTC, also 06:00 bis 22:00 Berliner Zeit im Sommer und 05:00 bis 21:00 im Winter. Kürzere Abstände bringen nichts, da GitHub geplante Läufe unter Last verzögert.
 
-**Was versioniert wird und was nicht.** `data/monitor.db` ist ableitbarer Zwischenstand und steht in `.gitignore`; bei stündlichen Läufen würde die Binärdatei das Repository um mehrere hundert MB im Jahr aufblähen. Zwischen den Läufen hält `actions/cache` sie vor. Versioniert wird nur `public/bootstrap.json`, und zwar ausschließlich, wenn der Lauf neue oder geänderte Dokumente gefunden hat. Fehlt die Datenbank — etwa nach Ablauf des Zwischenspeichers —, baut `seedFromSnapshot` sie aus `public/bootstrap.json` wieder auf, damit bereits bekannte Dokumente nicht erneut als neu gemeldet werden.
+**Was versioniert wird und was nicht.** `data/monitor.db` ist ableitbarer Zwischenstand und steht in `.gitignore`; bei halbstündlichen Läufen würde die Binärdatei das Repository um mehrere hundert MB im Jahr aufblähen. Zwischen den Läufen hält `actions/cache` sie vor. Versioniert wird nur `public/bootstrap.json`, und zwar ausschließlich, wenn der Lauf neue oder geänderte Dokumente gefunden hat. Fehlt die Datenbank — etwa nach Ablauf des Zwischenspeichers —, baut `seedFromSnapshot` sie aus `public/bootstrap.json` wieder auf, damit bereits bekannte Dokumente nicht erneut als neu gemeldet werden.
 
-**Briefings.** Bei stündlichen Läufen würde jeder Lauf einen Eintrag erzeugen. Gespeichert wird deshalb nur ein Briefing je Tag plus eines je Lauf mit tatsächlichen Änderungen.
+**Briefings.** Bei halbstündlichen Läufen würde jeder Lauf einen Eintrag erzeugen. Gespeichert wird deshalb nur ein Briefing je Tag plus eines je Lauf mit tatsächlichen Änderungen.
 
 Die veröffentlichte Seite ist **nur lesend**. „Stand neu laden" holt `bootstrap.json` erneut, löst aber keinen Quellenabruf aus — dafür fehlt der Server. Einen echten Lauf startet der Link „Quellenlauf auf GitHub starten" über `workflow_dispatch`. Ein Knopf, der direkt aus der Seite heraus abruft, bräuchte einen hinterlegten Zugangsschlüssel und ist auf einer öffentlichen statischen Seite deshalb ausgeschlossen. Archivieren und Versionsvergleich brauchen ebenfalls den Server und sind ausgeblendet. Sie ist außerdem **öffentlich erreichbar** — die angezeigten Dokumente sind amtlich und öffentlich, die Auswahl der Gremien ist es damit auch.
 
