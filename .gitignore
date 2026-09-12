@@ -14,3 +14,5 @@ ios/App/CapApp-SPM/Frameworks/
 CLAUDE_HANDOFF.md
 public/connection.json
 .DS_Store
+.static-vorher/
+.static-neu/

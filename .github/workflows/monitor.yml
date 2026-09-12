@@ -71,11 +71,35 @@ jobs:
             sleep $((versuch * 5))
           done
 
+      # Next.js benennt Bündel nach ihrem Inhalt. Aendert sich der Code, heissen sie anders und die
+      # alten verschwinden beim Deploy. GitHub Pages laesst die index.html aber zehn Minuten
+      # zwischenspeichern: wer sie in dieser Zeit noch aus dem Zwischenspeicher hat, sucht Bündel,
+      # die es nicht mehr gibt - die Seite erscheint dann ohne Gestaltung. Deshalb wird der
+      # vorherige Stand der Bündel mitgeliefert; er deckt das Zeitfenster vollstaendig ab.
+      - name: Bündel des vorherigen Laufs holen
+        uses: actions/cache@v4
+        with:
+          path: .static-vorher
+          key: static-${{ github.run_id }}
+          restore-keys: static-
+
       - name: Seite bauen
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ github.event.repository.name != format('{0}.github.io', github.repository_owner) && format('/{0}', github.event.repository.name) || '' }}
           NEXT_PUBLIC_REPO: ${{ github.repository }}
         run: npm run build:pages
+
+      - name: Vorherige Bündel mitliefern
+        run: |
+          mkdir -p .static-vorher out/_next/static
+          # Erst die Buendel DIESES Builds sichern - danach ist out/ eine Mischung aus beiden Staenden.
+          rm -rf .static-neu && cp -R out/_next/static .static-neu
+          # Nur ergaenzen, nie ueberschreiben: die Dateien dieses Builds haben Vorrang.
+          cp -Rn .static-vorher/. out/_next/static/ 2>/dev/null || true
+          echo "Dieser Build: $(find .static-neu -type f | wc -l | tr -d ' ') Dateien"
+          echo "Ausgeliefert: $(find out/_next/static -type f | wc -l | tr -d ' ') Dateien (mit dem vorherigen Stand)"
+          # Fuer den naechsten Lauf nur diesen Build vormerken, damit sich nichts anhaeuft.
+          rm -rf .static-vorher && mv .static-neu .static-vorher
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
