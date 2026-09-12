@@ -79,3 +79,15 @@ test('Der Suchtext deckt die übrigen angezeigten Felder ab',()=>{
  for(const s of ['21/7992','beschlussempfehlung','gesetzgebung','bundesregierung'])
   assert.ok(t.includes(s),`${s} fehlt im Suchtext`);
 });
+
+// Next.js liefert sonst seine englische Standardseite in einer durchgehend deutschen App.
+test('Die Fehlerseite ist deutsch und führt zurück',()=>{
+ const quelle=readFileSync('pages/404.tsx','utf8');
+ assert.ok(quelle.includes('Diese Seite gibt es nicht'));
+ assert.ok(quelle.includes('Zum Lagebild'),'ein Weg zurück muss da sein');
+ // Relativ, damit der Link auch unter einem Unterpfad wie /trumpf-monitor/ stimmt.
+ assert.ok(quelle.includes('href="."'),'ein absoluter Pfad würde unter dem Unterpfad ins Leere führen');
+ assert.ok(!/This page could not be found/.test(quelle));
+ // Eigene Gestaltung, damit die Seite auch ohne das ausgelagerte Stylesheet lesbar bleibt.
+ assert.ok(quelle.includes('fontFamily'),'die Seite trägt ihre Gestaltung selbst');
+});
