@@ -125,7 +125,11 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  // Gleich ist, was die Quelle unveraendert liefert - auch wenn der gespeicherte Hash aus einer frueheren
  // Darstellung stammt. Nach der Reparatur der DIP-Adressen galten sonst 78 unveraenderte Papiere auf
  // einen Schlag als "geaendert", mit neuer Version und Eintrag im Aenderungslog.
- const gleich=!!old&&(hash===old.hash||hash===contentHash(old));
+ // Eingearbeitete Angaben der anderen Quelle gehoeren nicht zum gelieferten Inhalt: Ausschusspositionen
+ // tragen nie Ressorts, Volltexttreffer nie Ausschuesse. Ohne diese Trennung galt die zusammengefuehrte
+ // Umsatzsteuerschluesselzahlen-Verordnung als geaendert, obwohl kein Feld anders war.
+ const eigenerStand=(i:Item):DocumentInput=>source.kind==='committee-dip'?{...i,ministries:[]}:source.kind==='fulltext-dip'?{...i,committees:[],lead:null}:i;
+ const gleich=!!old&&(hash===old.hash||hash===contentHash(eigenerStand(old)));
  const change=old?(gleich?'unchanged':'changed'):(baseline?'baseline':'new');
  const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(change==='changed'?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false};
  if(item.paperKey)jePapier.set(item.paperKey,item);

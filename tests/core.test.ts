@@ -512,3 +512,27 @@ test('Ein gekürztes Briefing kennt seine volle Größe',async()=>{
  assert.equal(b.items.length,12,'ausgeliefert werden zwölf');
  assert.equal(b.gesamt,15,'die volle Zahl bleibt erhalten');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Die zusammengefuehrte Umsatzsteuerschluesselzahlen-Verordnung trug das Ressort aus dem Volltexttreffer
+// und einen Hash aus der Zeit der alten DIP-Adressen. Kein Feld war anders, sie galt trotzdem als geaendert.
+test('Eingearbeitete Angaben der anderen Quelle zählen nicht als Änderung',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-eigen-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const ausschuss:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ const volltext:Source={id:'dip-drucksachen',name:'V',institution:'Bundestag',url:doc.url,kind:'fulltext-dip',note:'Fixture'};
+ const position={...doc,externalId:'pos',documentNumber:'21/888',paperKey:'BT-Drucksache 21/888',committees:['we'],lead:'we',ministries:[],topics:[]};
+ const treffer={...doc,externalId:'drs',documentNumber:'21/888',paperKey:'BT-Drucksache 21/888',committees:[],lead:null,ministries:['bmwe'],topics:[]};
+ try{
+ await runMonitor({sources:[ausschuss,volltext],fetcher:async(s)=>s.id==='dip-committees'?[position]:[treffer]});
+ const {db}=await import('../src/server/db');const c=await db();
+ let i=(await dashboard()).items;
+ assert.equal(i.length,1);assert.deepEqual(i[0].ministries,['bmwe'],'das Ressort ist eingearbeitet');
+ // Hash aus einer frueheren Darstellung.
+ await c.execute("UPDATE items SET data=json_set(data,'$.hash','aus-frueherer-fassung')");
+ const lauf=await runMonitor({sources:[ausschuss],fetcher:async()=>[position]});
+ assert.equal(lauf?.items.length,0,'weder Adresse noch eingearbeitetes Ressort sind eine Änderung');
+ assert.equal((await dashboard()).items[0].version,1);
+ // Eine echte Aenderung an den eigenen Angaben bleibt erkennbar.
+ await c.execute("UPDATE items SET data=json_set(data,'$.hash','aus-frueherer-fassung')");
+ const echt=await runMonitor({sources:[ausschuss],fetcher:async()=>[{...position,committees:['we','aa']}]});
+ assert.equal(echt?.items[0]?.change,'changed','ein neuer Ausschuss ist eine Änderung');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
