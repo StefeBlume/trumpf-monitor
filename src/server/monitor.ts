@@ -108,8 +108,8 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  }
  if(ok)await deduplicate();
  if(retention>0&&ok)await prune(retention);
- // Das Briefing traegt die Dokumente mit; bei einem Erstimport waren das 184 KB fuer einen einzigen
- // Eintrag. Fuer die Anzeige reichen die ersten 60 - die Gesamtzahl steht in der Zusammenfassung.
+ // Das Briefing traegt die Dokumente mit; bei einem Erstimport waren das 184 KB. Gespeichert werden
+ // hoechstens 40, ausgeliefert davon zwoelf - die Gesamtzahl steht in der Zusammenfassung.
  const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated.slice(0,40),coverage:{ok,failed,manual},errors};
  // Jeder Lauf wird dokumentiert, sonst zeigt das Lagebild die Meldung eines aelteren Laufs neben
  // dem Zeitstempel des juengsten - genau dieser Widerspruch war in der Oberflaeche sichtbar.
@@ -148,7 +148,7 @@ export async function seedFromSnapshot(snapshot:{items?:Item[];events?:Event[];b
 // Archiviertes bleibt, weil es bewusst aufgehoben wurde.
 export async function prune(days:number):Promise<number>{
  const c=await db();
- // Briefings sammeln sich sonst unbegrenzt an. Ausgeliefert werden ohnehin nur die letzten 30.
+ // Briefings sammeln sich sonst unbegrenzt an. Ausgeliefert werden ohnehin nur die letzten zwoelf.
  await c.execute('DELETE FROM briefings WHERE rowid NOT IN (SELECT rowid FROM briefings ORDER BY rowid DESC LIMIT 60)');
  const cutoff=new Date(Date.now()-days*86400000).toISOString();
  const stale=await c.execute({sql:`SELECT id FROM items WHERE json_extract(data,'$.archived')=0

@@ -31,7 +31,9 @@ export interface LobbyEntry {
  staffFte:number|null; spendFrom:number|null; spendTo:number|null; fiscalYear:string|null;
  updatedAt:string|null; own:boolean;
  // Erst nach dem Detailabruf gefuellt. detailFor haelt fest, fuer welchen Registerstand das geschah.
- projectList?:LobbyProject[]; detailFor?:string|null;
+ // topicProjects ist die Zahl aller Vorhaben mit Themenbezug - auch derer, die die Kappung
+ // nicht mehr mitfuehrt. Ohne sie meldete die Karte "und 8 weitere", obwohl es 29 waren.
+ projectList?:LobbyProject[]; detailFor?:string|null; topicProjects?:number;
 }
 export function mapProject(p:any):LobbyProject|null{
  const nummer=typeof p?.regulatoryProjectNumber==='string'?p.regulatoryProjectNumber:null;
@@ -101,8 +103,11 @@ export async function lobbyEntries(warn?:(n:string)=>void):Promise<LobbyEntry[]>
 }
 
 // Nur Vorhaben mit Themenbezug sind fuer die Uebersicht interessant; alles andere blaeht sie auf.
-// Zwoelf je Akteur genuegen: die Uebersicht zeigt vier und nennt den Rest als Zahl.
-export const withTopics=(ps:LobbyProject[])=>ps.filter(p=>p.topics.length).slice(0,12);
+export const withTopics=(ps:LobbyProject[])=>ps.filter(p=>p.topics.length);
+// Gespeichert wird eine begrenzte Zahl, gezaehlt wird die volle: der BDEW fuehrt 41 Vorhaben zu
+// diesen Themen, der ZVEI 33. Die Karte nennt deshalb die gezaehlte Zahl, nicht die gespeicherte.
+export const MAX_PROJECTS_PER_ENTRY=40;
+export const kappen=(ps:LobbyProject[])=>ps.slice(0,MAX_PROJECTS_PER_ENTRY);
 // Einzelabruf der Vorhaben. Das Register liefert sie nur in der Detailsuche, und die ist gross:
 // eine themenweite Abfrage sind 26 bis 43 MB. Deshalb je Eintrag einzeln und nur, wenn sich der
 // Registerstand seit dem letzten Abruf geaendert hat.
@@ -133,11 +138,11 @@ export async function enrichProjects(entries:LobbyEntry[],bekannt:Map<string,Lob
   // Auch beim Wiederverwenden filtern: ein gespeicherter Stand aus einer frueheren Fassung enthaelt
   // noch alle Vorhaben. Ohne diesen Filter bliebe der veroeffentlichte Stand gross, weil ein
   // unveraenderter Eintrag gar nicht erst neu abgerufen wird.
-  if(aktuell){out.push({...e,projectList:withTopics(alt!.projectList!),detailFor:alt!.detailFor});continue;}
-  if(e.projects===0){out.push({...e,projectList:[],detailFor:e.updatedAt});continue;}
-  if(geholt>=grenze){out.push({...e,projectList:withTopics(alt?.projectList??[]),detailFor:alt?.detailFor??null});continue;}
-  try{const ps=await holen(e.registerNumber);geholt++;out.push({...e,projectList:ps,detailFor:e.updatedAt});}
-  catch{out.push({...e,projectList:withTopics(alt?.projectList??[]),detailFor:alt?.detailFor??null});}
+  if(aktuell){const g=withTopics(alt!.projectList!);out.push({...e,projectList:kappen(g),detailFor:alt!.detailFor,topicProjects:alt!.topicProjects??g.length});continue;}
+  if(e.projects===0){out.push({...e,projectList:[],detailFor:e.updatedAt,topicProjects:0});continue;}
+  if(geholt>=grenze){const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length});continue;}
+  try{const ps=await holen(e.registerNumber);geholt++;const g=withTopics(ps);out.push({...e,projectList:kappen(g),detailFor:e.updatedAt,topicProjects:g.length});}
+  catch{const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length});}
  }
  return out;
 }

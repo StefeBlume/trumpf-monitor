@@ -99,7 +99,7 @@ test('Ein Ausfall des Registers lässt die Dokumentquellen unberührt',async()=>
  assert.equal(d.sources.find(s=>s.id==='lobbyregister')?.status,'error');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
-import {mapProject,enrichProjects,withTopics,type LobbyProject} from '../src/server/lobby';
+import {mapProject,enrichProjects,withTopics,kappen,MAX_PROJECTS_PER_ENTRY,type LobbyProject} from '../src/server/lobby';
 
 // Aus der echten Detailantwort des Registers gekürzt.
 const rohVorhaben={regulatoryProjectNumber:'RV0012620',
@@ -133,8 +133,11 @@ test('Nur Vorhaben mit Themenbezug kommen in die Übersicht',()=>{
  const ohne={...mit,topics:[]};
  assert.deepEqual(withTopics([mit,ohne]).map(v=>v.number),['RV0012620']);
  // Und hoechstens zwölf je Akteur: die Übersicht zeigt vier und nennt den Rest als Zahl.
- const viele=Array.from({length:30},(_,i)=>({...mit,number:'RV'+i}));
- assert.equal(withTopics(viele).length,12);
+ // withTopics filtert nur noch; begrenzt wird beim Speichern, gezählt wird vollständig.
+ const viele=Array.from({length:MAX_PROJECTS_PER_ENTRY+8},(_,i)=>({...mit,number:'RV'+i}));
+ assert.equal(withTopics(viele).length,MAX_PROJECTS_PER_ENTRY+8,'die Filterung kappt nicht');
+ assert.equal(kappen(withTopics(viele)).length,MAX_PROJECTS_PER_ENTRY,'die Speicherung kappt');
+ assert.ok(MAX_PROJECTS_PER_ENTRY>=40,'unter 40 würde die Kappung häufig greifen');
 });
 
 test('Vorhaben werden nur bei geändertem Registerstand neu geholt',async()=>{
@@ -209,3 +212,18 @@ test('Ausgefallene Themenabfragen erscheinen im Quellenstatus',async()=>{
  assert.ok(lauf!.errors.some(e=>/Themenabfragen/.test(e)),'das Briefing muss ihn nennen');
  assert.equal((await dashboard()).lobby.length,1,'die erreichbaren Einträge bleiben');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+test('Die Karte nennt alle Vorhaben mit Themenbezug, auch die nicht gespeicherten',async()=>{
+ // Der BDEW führt 41 Vorhaben zu diesen Themen, gespeichert werden 40. Ohne mitgeführte Zahl
+ // meldete die Karte "und 8 weitere", obwohl es 29 waren.
+ const mit=mapProject(rohVorhaben)!;
+ const viele=Array.from({length:41},(_,i)=>({...mit,number:'RV'+i}));
+ const stand=await enrichProjects([{...bau('R1',['ki']),projects:200}],new Map(),async()=>viele);
+ assert.equal(stand[0].projectList!.length,MAX_PROJECTS_PER_ENTRY,'gespeichert wird begrenzt');
+ assert.equal(stand[0].topicProjects,41,'gezählt wird vollständig');
+ // Beim Wiederverwenden darf die gezählte Zahl nicht verloren gehen.
+ const bekannt=new Map([['R1',stand[0]]]);
+ const zweiter=await enrichProjects([{...bau('R1',['ki']),projects:200,updatedAt:stand[0].updatedAt}],bekannt,
+  async()=>{throw new Error('darf nicht erneut abrufen');});
+ assert.equal(zweiter[0].topicProjects,41);
+});

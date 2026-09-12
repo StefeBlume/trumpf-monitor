@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
+import {mkdtempSync,rmSync,readFileSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {clean,sourceURL,officialURL,germanDate,parseFeed,parseCommitteeEvents,parseAgendaTable,contentHash} from '../src/server/parsing';
 import {fetchOfficial,PermanentSourceError,matchCommitteeName,lookbackStart,mapCommitteePosition} from '../src/server/connectors';
 import {runMonitor,dashboard,prune} from '../src/server/monitor';
@@ -234,4 +234,15 @@ test('Das Zeitlimit wächst mit der erlaubten Antwortgröße',()=>{
  // Nach oben gedeckelt, damit ein haengender Server den Lauf nicht blockiert.
  assert.equal(fetchTimeoutFor(500*1024*1024),90_000);
  assert.equal(fetchTimeoutFor(1),10_000);
+});
+
+test('Das Seitenlimit deckt ein volles Abrufzeitfenster',async()=>{
+ // Die Volltextsuche liefert zehn Dokumente je Seite. Ein 30-Tage-Fenster sind rund 675 Dokumente
+ // und damit 68 Seiten; bei einer Grenze von 100 bliebe wenig Luft.
+ const quelle=readFileSync('src/server/connectors.ts','utf8');
+ const limit=Number(quelle.match(/for\(let page=0;page<(\d+);page\+\+\)/)?.[1]);
+ assert.ok(limit>=150,`Seitenlimit ${limit} lässt zu wenig Luft für ein 30-Tage-Fenster`);
+ // Und das Fenster selbst bleibt bei 30 Tagen gedeckelt.
+ const aeltest=lookbackStart('2020-01-01T00:00:00.000Z');
+ assert.ok(Date.now()-Date.parse(aeltest)<=30*86400000+2000);
 });

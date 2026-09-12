@@ -43,7 +43,9 @@ export function lookbackStart(checkedAt?:string):string{
 async function dipPages(endpoint:string,since:string,onPage:(docs:any[])=>void,maxBytes?:number):Promise<void>{
  if(!process.env.DIP_API_KEY)throw new Error('DIP_API_KEY fehlt');
  let cursor:string|undefined;
- for(let page=0;page<100;page++){
+ // Die Volltextsuche liefert nur zehn Dokumente je Seite. Ein 30-Tage-Fenster nach einer laengeren
+ // Pause sind rund 675 Dokumente, also 68 Seiten - zu nah an einer Grenze von 100.
+ for(let page=0;page<200;page++){
  const u=new URL(`https://search.dip.bundestag.de/api/v1/${endpoint}`);
  u.searchParams.set('f.wahlperiode',String(WAHLPERIODE));u.searchParams.set('f.aktualisiert.start',since);u.searchParams.set('format','json');
  if(cursor)u.searchParams.set('cursor',cursor);
