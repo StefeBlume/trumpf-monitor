@@ -2,7 +2,8 @@ import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {parseFeed,contentHash,officialURL,germanDate,parseCommitteeEvents,parseAgendaTable,sitzungstag} from '../src/server/parsing';
 import {mapCommitteePosition,mapFulltextDrucksache,matchCommitteeName,lookbackStart,datumAusAdresse,rssNachbereiten} from '../src/server/connectors';
-import {berlinClock,runMonitor,dashboard,history,briefingSummary,seedFromSnapshot} from '../src/server/monitor';
+import {berlinClock,runMonitor,dashboard,history,briefingSummary,seedFromSnapshot,erfassungsstand,ERFASSUNGSSTAND} from '../src/server/monitor';
+import {TOPICS} from '../src/server/topics';
 import {resetDBForTests} from '../src/server/db';import {COMMITTEES,MINISTRIES,type DocumentInput,type Item,type Source} from '../src/model';
 const doc:DocumentInput={externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',url:'https://www.bundestag.de/test',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',step:'Gesetzentwurf',procedure:'Gesetzgebung',documentNumber:'21/1234',pdfUrl:null,committees:['we'],lead:'we',ministries:[],originator:'Bundesregierung',topics:[]};
 // Aus einer echten DIP-Vorgangsposition gekürzt.
@@ -618,4 +619,17 @@ test('Eine Tagesordnung trägt ihren Sitzungstag als Termin',async()=>{
  assert.equal(gespeichert.publishedAt?.slice(0,10),'2026-09-09','gespeicherte Stände zeigen den Sitzungstag');
  assert.equal(gespeichert.updatedAt?.slice(0,10),'2026-09-07','die Veröffentlichung bleibt die letzte Bewegung');
  assert.equal(asItem({...doc,title:'Gesetz am 1. Mai 2026',publishedAt:'2026-04-01T00:00:00.000Z'}).publishedAt?.slice(0,10),'2026-04-01','nur Tagesordnungen werden umgedeutet');
+});
+
+// Nach der EUV-Korrektur wurde vergessen, den Erfassungsstand hochzuzaehlen: der Lauf schaute nur zwei Tage
+// zurueck, und das Nachrichtendienstrecht blieb live ein Halbleiter-Treffer. Jede Aenderung am Raster
+// muss den Stand von selbst aendern - auch eine neue Ausnahme oder Kontextregel.
+test('Jede Änderung des Themenrasters holt das Fenster neu',()=>{
+ assert.equal(ERFASSUNGSSTAND,erfassungsstand(TOPICS));
+ const mit=(id:string,f:(t:any)=>any)=>TOPICS.map(t=>t.id===id?f(t):t);
+ assert.notEqual(erfassungsstand(mit('halbleiter',t=>({...t,terms:[...t.terms,'extra']}))),ERFASSUNGSSTAND,'ein neuer Begriff');
+ assert.notEqual(erfassungsstand(mit('dualuse',t=>({...t,ignore:[/anders/gi]}))),ERFASSUNGSSTAND,'eine geänderte Ausnahme');
+ assert.notEqual(erfassungsstand(mit('ki',t=>({...t,context:{...t.context,naehe:undefined}}))),ERFASSUNGSSTAND,'eine geänderte Kontextregel');
+ assert.notEqual(erfassungsstand(TOPICS,6),ERFASSUNGSSTAND,'eine neue Zuordnungslogik');
+ assert.equal(erfassungsstand(TOPICS),ERFASSUNGSSTAND,'dasselbe Raster ergibt denselben Stand');
 });

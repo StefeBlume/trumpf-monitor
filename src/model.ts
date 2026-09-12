@@ -37,7 +37,7 @@ export const MINISTRIES:Ministry[] = [
 export const committeeById=(id:string)=>COMMITTEES.find(c=>c.id===id);
 export const committeeByKuerzel=(k:string)=>COMMITTEES.find(c=>c.kuerzel.includes(k));
 export type Change = 'baseline'|'new'|'changed'|'unchanged';
-export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'fulltext-dip'|'committee-agenda'|'committee-events'|'ministry-drafts'|'rss'|'lobby'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number; erfassung?:number; pfad?:string;}
+export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'fulltext-dip'|'committee-agenda'|'committee-events'|'ministry-drafts'|'rss'|'lobby'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number; erfassung?:number|string; pfad?:string;}
 export interface DocumentInput {
  externalId:string; title:string; url:string; text:string; publishedAt:string|null;      // Datum des Dokuments bzw. des Termins
  updatedAt:string|null;        // Zeitpunkt der letzten Bewegung laut Quelle; treibt die Sortierung
