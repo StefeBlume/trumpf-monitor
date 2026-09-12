@@ -21,7 +21,7 @@ export const OWN_REGISTER_NUMBER='R000697';
 // Ein Vorhaben, an dem ein Interessenvertreter laut eigener Angabe arbeitet. Die Drucksache verweist
 // auf das Papier im Bundestag und macht den Bezug zur Dokumentliste der App herstellbar.
 export interface LobbyProject {
- number:string; title:string; description:string; topics:string[];
+ number:string; title:string; topics:string[];
  printingNumber:string|null; documentUrl:string|null; projectUrl:string|null;
 }
 export interface LobbyEntry {
@@ -41,7 +41,9 @@ export function mapProject(p:any):LobbyProject|null{
  const pm=(Array.isArray(p?.printedMatters)?p.printedMatters:[])[0]??{};
  const doc=typeof pm.documentUrl==='string'&&officialURL(pm.documentUrl)?pm.documentUrl:null;
  const vorgang=typeof pm.projectUrl==='string'&&officialURL(pm.projectUrl)?pm.projectUrl:null;
- return {number:nummer,title:titel,description:beschreibung===titel?'':beschreibung,
+ // Die Beschreibung fliesst in die Themensuche ein, wird aber nicht gespeichert: die App zeigt sie
+ // nicht, und sie machte einen spuerbaren Teil des veroeffentlichten Standes aus.
+ return {number:nummer,title:titel,
   topics:scanTopics(titel,beschreibung).map(m=>m.topic),
   printingNumber:pm.printingNumber?clean(pm.printingNumber):null,documentUrl:doc,projectUrl:vorgang};
 }
@@ -95,6 +97,9 @@ export async function lobbyEntries():Promise<LobbyEntry[]>{
  return relevantEntries(mergeEntries(found));
 }
 
+// Nur Vorhaben mit Themenbezug sind fuer die Uebersicht interessant; alles andere blaeht sie auf.
+// Zwoelf je Akteur genuegen: die Uebersicht zeigt vier und nennt den Rest als Zahl.
+export const withTopics=(ps:LobbyProject[])=>ps.filter(p=>p.topics.length).slice(0,12);
 // Einzelabruf der Vorhaben. Das Register liefert sie nur in der Detailsuche, und die ist gross:
 // eine themenweite Abfrage sind 26 bis 43 MB. Deshalb je Eintrag einzeln und nur, wenn sich der
 // Registerstand seit dem letzten Abruf geaendert hat.
@@ -106,10 +111,12 @@ export async function fetchProjects(registerNumber:string):Promise<LobbyProject[
  // Abruf als erledigt und die Vorhaben fehlen dauerhaft.
  if(!treffer)throw new Error(`Registereintrag ${registerNumber} in der Detailsuche nicht gefunden`);
  const roh=(treffer?.regulatoryProjects?.regulatoryProjects)??[];
- return (Array.isArray(roh)?roh:[]).map(mapProject).filter((p:LobbyProject|null):p is LobbyProject=>!!p);
+ const alle=(Array.isArray(roh)?roh:[]).map(mapProject).filter((p:LobbyProject|null):p is LobbyProject=>!!p);
+ // Nur Vorhaben mit Themenbezug behalten. Die uebrigen zeigt die App nie an, machten aber den
+ // groessten Teil des veroeffentlichten Standes aus: 2290 Vorhaben waren 1,6 MB, davon 343 relevant.
+ // Die gemeldete Gesamtzahl bleibt als eigene Angabe erhalten.
+ return withTopics(alle);
 }
-// Nur Vorhaben mit Themenbezug sind fuer die Uebersicht interessant; alles andere blaeht sie auf.
-export const withTopics=(ps:LobbyProject[])=>ps.filter(p=>p.topics.length);
 export const MAX_DETAIL_FETCHES=25;
 // Ergaenzt die Vorhaben. Bereits bekannte Eintraege werden uebernommen, geaenderte neu geholt,
 // und je Lauf hoechstens MAX_DETAIL_FETCHES, damit ein Lauf nicht aus dem Zeitrahmen faellt.

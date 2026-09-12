@@ -99,3 +99,7 @@
 .section-heading .muted{font-size:12px}
 .results .section-heading h2,.upcoming .section-heading h2{margin:0}
 }
+.lobby-card>.lobby-kopf{text-decoration:none;color:inherit;display:flex}
+.vorhaben-zeile.verlinkt{display:block;text-decoration:none;color:inherit;border-radius:0 6px 6px 0}
+.vorhaben-zeile.verlinkt:hover{background:#f3f6fd;border-left-color:var(--blue)}
+.vorhaben-zeile span svg{vertical-align:-1px;color:#8ea3d6}

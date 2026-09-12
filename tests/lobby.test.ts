@@ -115,8 +115,8 @@ test('Ein Vorhaben wird mit Drucksache und Themenbezug übernommen',()=>{
  assert.equal(v.printingNumber,'20/14736');
  assert.ok(v.documentUrl?.endsWith('.pdf'));
  assert.ok(v.topics.includes('maschinen'),'genau dieses Vorhaben hatte TRUMPF selbst angemeldet');
- // Ist die Beschreibung nur der Titel, wird sie nicht doppelt gezeigt.
- assert.equal(v.description,'');
+ // Die Beschreibung fliesst in die Themensuche ein, wird aber nicht mitgespeichert.
+ assert.equal((v as unknown as Record<string,unknown>).description,undefined);
 });
 
 test('Vorhaben ohne Nummer oder Titel werden verworfen, fremde Adressen gefiltert',()=>{
@@ -132,6 +132,9 @@ test('Nur Vorhaben mit Themenbezug kommen in die Übersicht',()=>{
  const mit=mapProject(rohVorhaben)!;
  const ohne={...mit,topics:[]};
  assert.deepEqual(withTopics([mit,ohne]).map(v=>v.number),['RV0012620']);
+ // Und hoechstens zwölf je Akteur: die Übersicht zeigt vier und nennt den Rest als Zahl.
+ const viele=Array.from({length:30},(_,i)=>({...mit,number:'RV'+i}));
+ assert.equal(withTopics(viele).length,12);
 });
 
 test('Vorhaben werden nur bei geändertem Registerstand neu geholt',async()=>{

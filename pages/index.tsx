@@ -139,8 +139,8 @@ export default function Home(){
  <div className="notice"><ShieldCheck size={20}/><span><strong>Wozu diese Seite?</strong> Sie zeigt, an welchen Gesetzesvorhaben sich andere gerade abarbeiten — Verbände, Wettbewerber, Forschungseinrichtungen. Wo viele gleichzeitig arbeiten, bewegt sich etwas. Jedes Vorhaben verlinkt die zugehörige Drucksache. Quelle ist die Selbstauskunft im amtlichen Register: es zeigt, wer sich <strong>registriert</strong> hat, nicht wer tatsächlich Einfluss nimmt.</span></div>
  <div className="topicbar">{TOPICS.map(t=>{const n=(data.lobby??[]).filter(e=>e.topics.includes(t.id)).length;return <button key={t.id} className={'topicchip'+(topic===t.id?' chosen':'')+(n?'':' leer')} aria-pressed={topic===t.id} disabled={!n} onClick={()=>setTopic(topic===t.id?'':t.id)} title={t.why}>{t.label}<span>{n}</span></button>;})}{topic&&<button className="topicchip reset" onClick={()=>setTopic('')}>Alle Themen <X size={13}/></button>}</div>
  <section className="results"><div className="section-heading"><h2><Users size={19}/> Akteure <span>{lobby.length}</span></h2><span className="muted">Sortiert nach Themenbreite und Zahl der Vorhaben</span></div>
- {lobby.length?<div className="item-list">{lobby.map(e=><a key={e.registerNumber} className={'lobby-card'+(e.own?' eigen':'')} href={e.url} target="_blank" rel="noopener noreferrer">
-  <div className="lobby-kopf"><div><strong>{e.name}</strong><span className="lobby-typ">{e.kind}{e.own&&' · eigener Eintrag'}</span></div><ArrowUpRight size={17}/></div>
+ {lobby.length?<div className="item-list">{lobby.map(e=><div key={e.registerNumber} className={'lobby-card'+(e.own?' eigen':'')}>
+  <a className="lobby-kopf" href={e.url} target="_blank" rel="noopener noreferrer"><div><strong>{e.name}</strong><span className="lobby-typ">{e.kind}{e.own&&' · eigener Eintrag'}</span></div><ArrowUpRight size={17}/></a>
   <div className="tags">{e.topics.map(id=><span key={id} className="badge topic">{topicById(id)?.label}</span>)}</div>
   <div className="lobby-zahlen">
    <span><FileText size={14}/>{e.projects} {e.projects===1?'Vorhaben gemeldet':'Vorhaben gemeldet'}</span>
@@ -152,11 +152,14 @@ export default function Home(){
   {(() => {const vs=withTopics(e.projectList??[]).filter((v:LobbyProject)=>!topic||v.topics.includes(topic));
    if(!vs.length)return e.projects>0?<p className="lobby-felder">{e.projects} Vorhaben gemeldet, keines davon zu deinen Themen.</p>:null;
    return <div className="vorhaben"><span className="vorhaben-kopf">Arbeitet an diesen Vorhaben zu deinen Themen</span>
-    {vs.slice(0,4).map((v:LobbyProject)=><div className="vorhaben-zeile" key={v.number}><strong>{v.title}</strong>
-     <span>{v.topics.map(id=>topicById(id)?.label).filter(Boolean).join(' · ')}{v.printingNumber?` · Drucksache ${v.printingNumber}`:''}</span></div>)}
+    {vs.slice(0,4).map((v:LobbyProject)=>{const ziel=v.documentUrl??v.projectUrl;
+     const inhalt=<><strong>{v.title}</strong><span>{v.topics.map(id=>topicById(id)?.label).filter(Boolean).join(' · ')}{v.printingNumber?` · Drucksache ${v.printingNumber}`:''}{ziel?' ':''}{ziel&&<ArrowUpRight size={12}/>}</span></>;
+     return ziel
+      ? <a className="vorhaben-zeile verlinkt" key={v.number} href={ziel} target="_blank" rel="noopener noreferrer">{inhalt}</a>
+      : <div className="vorhaben-zeile" key={v.number}>{inhalt}</div>;})}
     {vs.length>4&&<span className="vorhaben-mehr">und {vs.length-4} weitere</span>}</div>;})()}
   {!!e.fields.length&&<p className="lobby-felder">{e.fields.join(' · ')}</p>}
- </a>)}</div>:
+ </div>)}</div>:
  <div className="empty"><Users size={36}/><h3>Keine Einträge</h3><p>{data.lobby?.length?'Zu diesem Thema ist niemand mit mindestens zwei deiner Themen registriert.':'Noch kein Quellenlauf, oder das Register war nicht erreichbar.'}</p></div>}</section></>:
  view==='committees'?<><div className="page-heading"><div><div className="eyebrow">DIE AUSWAHL</div><h1>Ausschüsse & Ressorts.</h1><p>Nur diese Gremien werden überwacht. Alles andere wird verworfen, bevor es in die App kommt.</p></div></div>
  <div className="notice"><ShieldCheck size={20}/><span>Die Auswahl ist die einzige inhaltliche Entscheidung des Systems. Einzelne Dokumente werden danach nicht mehr gewichtet.</span></div>
