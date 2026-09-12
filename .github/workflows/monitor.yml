@@ -49,14 +49,27 @@ jobs:
           DATABASE_URL: file:data/monitor.db
         run: npm run monitor
 
+      # Laeuft ein Zeitplan an, waehrend ein Push-Lauf schon gepusht hat, ist der Checkout veraltet
+      # und der Push wird abgelehnt. Deshalb den eigenen Stand auf den aktuellen Remote setzen statt
+      # zu rebasen: die Datei aus diesem Lauf ist die frischere, alles andere kommt vom Remote.
       - name: Neuen Stand sichern
         if: steps.run.outputs.changed == 'true'
+        continue-on-error: true
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/bootstrap.json
-          git diff --staged --quiet || git commit -m "Quellenstand $(date -u +'%Y-%m-%d %H:%M') UTC"
-          git push
+          cp public/bootstrap.json "$RUNNER_TEMP/bootstrap.json"
+          for versuch in 1 2 3; do
+            git fetch --quiet origin main
+            git reset --quiet --hard origin/main
+            cp "$RUNNER_TEMP/bootstrap.json" public/bootstrap.json
+            git add public/bootstrap.json
+            if git diff --staged --quiet; then echo "Kein inhaltlicher Unterschied"; break; fi
+            git commit --quiet -m "Quellenstand $(date -u +'%Y-%m-%d %H:%M') UTC"
+            if git push --quiet; then echo "Gesichert im Versuch $versuch"; break; fi
+            echo "Push abgelehnt, Remote hat sich bewegt - Versuch $versuch"
+            sleep $((versuch * 5))
+          done
 
       - name: Seite bauen
         env:
