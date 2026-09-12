@@ -1,4 +1,5 @@
 import type {Item} from '../model';
+import {topicById} from '../server/topics';
 // Nach welchem Datum geordnet und aufbewahrt wird: der Zeitpunkt der letzten Bewegung laut Quelle.
 // Das eigene changedAt taugt dafuer nicht - beim Lauf bekommen alle Treffer denselben Zeitstempel,
 // die Reihenfolge waere praktisch zufaellig. Ohne Quellendatum zaehlt der Erstkontakt, nicht "jetzt",
@@ -13,4 +14,14 @@ export function datumsteil(i:Pick<Item,'updatedAt'|'publishedAt'|'firstSeen'>,fo
  const gefuehrt=format(recency(i));
  const eigenes=i.publishedAt&&recency(i).slice(0,10)!==i.publishedAt.slice(0,10)?format(i.publishedAt):null;
  return {gefuehrt,eigenes};
+}
+
+// Der Suchtext eines Dokuments. Frueher wurden die Felder roh verkettet: ein fehlendes
+// documentNumber landete als Zeichenkette "null" darin, und die Suche nach "null" lieferte genau die
+// Dokumente ohne Nummer. Die Themen fehlten ganz - "Halbleiter" fand einen Treffer, obwohl die
+// Themenleiste zehn zaehlte. Gesucht wird jetzt auch in Thema, Fundstelle und Urheber.
+export function suchtext(i:Item,gremien:string[]):string{
+ const themen=(i.topics??[]).flatMap(m=>[topicById(m.topic)?.label,...m.terms,m.snippet]);
+ return [i.title,i.documentNumber,i.documentType,i.step,i.procedure,i.originator,...gremien,...themen]
+  .filter((x):x is string=>typeof x==='string'&&x.length>0).join(' ').toLowerCase();
 }

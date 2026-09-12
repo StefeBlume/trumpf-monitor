@@ -1,6 +1,13 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {recency,datumsteil} from '../src/ui/format';
+import {recency,datumsteil,suchtext} from '../src/ui/format';
+import type {Item} from '../src/model';
+const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
+ url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
+ step:null,procedure:null,documentNumber:null,pdfUrl:null,committees:[],lead:null,ministries:[],
+ originator:null,topics:[],id:'i',sourceId:'s',institution:'I',hash:'h',version:1,change:'new',
+ firstSeen:'2026-09-01T00:00:00.000Z',lastSeen:'2026-09-01T00:00:00.000Z',changedAt:'2026-09-01T00:00:00.000Z',
+ archived:false,...over});
 
 const roh=(u:string|null,p:string|null,f='2026-09-01T00:00:00.000Z')=>({updatedAt:u,publishedAt:p,firstSeen:f});
 const kurz=(s:string|null)=>s?s.slice(0,10):'kein Datum';
@@ -43,4 +50,32 @@ test('Der Untertitel verspricht nur, was die Aufbewahrung hält',()=>{
  const quelle=readFileSync('pages/index.tsx','utf8');
  assert.equal((quelle.match(/nur die letzten 10 Tage/g)??[]).length,0);
  assert.ok(quelle.includes('Bewegungen der letzten 10 Tage'));
+});
+
+// Die Suche verkettete die Felder roh: ein fehlendes documentNumber landete als "null" im Suchtext,
+// und die Suche nach "null" lieferte genau die Dokumente ohne Nummer. Die Themen fehlten ganz.
+test('Der Suchtext enthält keine Platzhalter für fehlende Felder',()=>{
+ const leer=item({documentNumber:null,step:null,procedure:null,originator:null,topics:[]});
+ const t=suchtext(leer,[]);
+ assert.ok(!t.includes('null'),`"null" steht im Suchtext: ${t}`);
+ assert.ok(!t.includes('undefined'));
+ assert.ok(t.includes('gesetz zur änderung'),'der Titel muss enthalten sein');
+});
+
+test('Die Suche findet ein Dokument über sein Thema',()=>{
+ // "Halbleiter" fand live einen Treffer, obwohl die Themenleiste zehn zählte.
+ const mit=item({title:'Bericht ohne Schlagwort im Titel',topics:[
+  {topic:'halbleiter',terms:['mikroelektronik'],count:9,inTitle:false,snippet:'… Ausbau der Mikroelektronik in Dresden …'}]});
+ const t=suchtext(mit,['Wirtschaft und Energie']);
+ assert.ok(t.includes('halbleiter & euv'),'das Thema selbst ist suchbar');
+ assert.ok(t.includes('mikroelektronik'),'der gefundene Begriff ist suchbar');
+ assert.ok(t.includes('dresden'),'auch die Fundstelle ist suchbar');
+ assert.ok(t.includes('wirtschaft und energie'),'und das Gremium');
+});
+
+test('Der Suchtext deckt die übrigen angezeigten Felder ab',()=>{
+ const voll=item({documentNumber:'21/7992',step:'Beschlussempfehlung',procedure:'Gesetzgebung',originator:'Bundesregierung'});
+ const t=suchtext(voll,[]);
+ for(const s of ['21/7992','beschlussempfehlung','gesetzgebung','bundesregierung'])
+  assert.ok(t.includes(s),`${s} fehlt im Suchtext`);
 });
