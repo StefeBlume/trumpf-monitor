@@ -154,10 +154,15 @@ export async function ingest(source:Source,since:string,warn?:(note:string)=>voi
  throw new Error('Manuelle Ergänzung erforderlich');
 }
 
-// Gesetzesvorhaben des BMF ueber die Sitemap. Die Inhaltsseiten des Ministeriums liegen hinter
-// einem Bot-Schutz und werden bewusst nicht abgerufen - die Sitemap ist in der robots.txt
-// ausdruecklich fuer Maschinen ausgewiesen und liefert Adresse und Aenderungsdatum.
-// Der Titel bleibt deshalb unbekannt; als Bezeichnung dient das amtliche Kuerzel aus der Adresse.
+// Gesetzesvorhaben des BMF ueber die Sitemap: sie ist in der robots.txt ausdruecklich fuer Maschinen
+// ausgewiesen und liefert Adresse und Aenderungsdatum.
+//
+// Den richtigen Titel traegt nur die Inhaltsseite, und die ist aus dem Zeitplan heraus nicht
+// erreichbar: sie leitet auf validate.perfdrive.com um, den Bot-Schutz von Radware. Im Browser faellt
+// das nicht auf, weil der die Pruefung besteht - ein Abruf mit curl oder aus dem Lauf wird
+// abgefangen. Ein Umgehen waere ein Umgehen; deshalb bleibt es beim amtlichen Kuerzel aus der
+// Adresse. Diese Pruefung wurde einmal in die falsche Richtung gemacht (getestet worden war die
+// Domain des BMWE) - die Umleitung oben ist der Beleg fuer das BMF selbst.
 export const BMF_SITEMAP='https://www.bundesfinanzministerium.de/sitemap.xml';
 export function bmfLabel(slug:string):string{
  return slug.replace(/^\d{4}-\d{2}-\d{2}-/,'').replace(/^G-/,'').replace(/-/g,' ')

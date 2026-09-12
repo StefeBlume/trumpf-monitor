@@ -270,3 +270,27 @@ test('Der Slug bleibt auch bei unbrauchbaren Titeln gültig',()=>{
  assert.ok(slug('x'.repeat(300)).length<=80,'die Adresse bleibt handhabbar');
  assert.ok(!slug('Ende mit Satzzeichen ...').endsWith('-'),'kein Trennstrich am Ende');
 });
+
+
+
+
+// Die Inhaltsseiten des BMF tragen den richtigen Titel, sind aus dem Lauf heraus aber nicht
+// erreichbar: sie leiten auf validate.perfdrive.com um, den Bot-Schutz von Radware. Im Browser
+// faellt das nicht auf. Der Schutz von fetchOfficial haelt genau das ab - und soll es auch.
+test('Eine Weiterleitung auf einen Bot-Schutz wird abgewiesen, nicht umgangen',async()=>{
+ const echt=globalThis.fetch;
+ globalThis.fetch=(async()=>new Response(null,{status:302,
+  headers:{location:'https://validate.perfdrive.com/?ssc=x'}})) as typeof fetch;
+ try{
+  await assert.rejects(()=>fetchOfficial('https://www.bundesfinanzministerium.de/Content/DE/x.html'),
+   (e:Error)=>e instanceof PermanentSourceError&&/Weiterleitung nicht freigegeben/.test(e.message));
+ }finally{globalThis.fetch=echt;}
+});
+
+test('Ohne erreichbaren Titel dient das amtliche Kürzel, ohne einen Titel zu erfinden',()=>{
+ const sitemap='<urlset><url><loc>https://www.bundesfinanzministerium.de/Content/DE/Gesetzestexte/Gesetze_Gesetzesvorhaben/Abteilungen/Abteilung_IV/21_Legislaturperiode/2026-08-18-EStReformG-2027/0-Gesetz.html</loc><lastmod>2026-08-18</lastmod></url></urlset>';
+ const [d]=parseMinistryDrafts(sitemap);
+ assert.equal(d.title,'Gesetzesvorhaben EStReformG 2027');
+ assert.equal(d.documentType,'Referentenentwurf');
+ assert.ok(d.url.startsWith('https://www.bundesfinanzministerium.de/'),'der Link öffnet im Browser die richtige Seite');
+});
