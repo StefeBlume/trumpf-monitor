@@ -2,6 +2,7 @@ import {TOPICS,scanTopics} from './topics';
 import {fetchOfficial} from './connectors';
 import {clean,officialURL} from './parsing';
 import {RASTER} from './raster';
+import {withTopics} from '../ui/format';
 // Das Lobbyregister des Bundestags fuehrt, wer sich beruflich fuer welche Interessen einsetzt.
 // Je Thema eine eigene Abfrage; die Begriffe sind enger als im Volltextraster, weil das Register
 // mit Interessenfeldern arbeitet und breite Begriffe wie "Industriepolitik" tausende Eintraege
@@ -117,7 +118,8 @@ export async function lobbyEntries(warn?:(n:string)=>void):Promise<LobbyEntry[]>
 }
 
 // Nur Vorhaben mit Themenbezug sind fuer die Uebersicht interessant; alles andere blaeht sie auf.
-export const withTopics=(ps:LobbyProject[])=>ps.filter(p=>p.topics.length);
+// Definiert in src/ui/format.ts, damit die Oberflaeche sie ohne Server-Code laden kann.
+export {withTopics};
 // Gespeichert wird eine begrenzte Zahl, gezaehlt wird die volle: der BDEW fuehrt 41 Vorhaben zu
 // diesen Themen, der ZVEI 33. Die Karte nennt deshalb die gezaehlte Zahl, nicht die gespeicherte.
 export const MAX_PROJECTS_PER_ENTRY=40;

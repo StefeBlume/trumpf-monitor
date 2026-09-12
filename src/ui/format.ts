@@ -1,5 +1,6 @@
 import type {Item} from '../model';
 import {topicById} from '../server/topics';
+import type {LobbyProject} from '../server/lobby';
 // Nach welchem Datum geordnet und aufbewahrt wird: der Zeitpunkt der letzten Bewegung laut Quelle.
 // Das eigene changedAt taugt dafuer nicht - beim Lauf bekommen alle Treffer denselben Zeitstempel,
 // die Reihenfolge waere praktisch zufaellig. Ohne Quellendatum zaehlt der Erstkontakt, nicht "jetzt",
@@ -47,3 +48,7 @@ export function datum(s:string|null|undefined,mitZeit=false):string{
   :{day:'2-digit',month:'short',year:'numeric',timeZone:tag?'UTC':'Europe/Berlin'};
  return new Intl.DateTimeFormat('de-DE',f).format(new Date(s));
 }
+
+// Liegt hier und nicht in src/server/lobby.ts: die Oberflaeche importierte die Funktion von dort und zog damit
+// Connectors, den HTML-Parser cheerio und einen Krypto-Ersatz in den Browser - 655 KB von 1,0 MB JavaScript.
+export const withTopics=(ps:LobbyProject[])=>ps.filter(p=>p.topics.length);

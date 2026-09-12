@@ -3,8 +3,8 @@ import {useEffect,useRef,useState} from 'react';
 import {Radar,LayoutDashboard,FileText,Radio,Settings,Search,ArrowUpRight,RefreshCw,ChevronRight,Clock,ShieldCheck,AlertCircle,ArrowLeft,Download,Archive,History,Check,SlidersHorizontal,X,Landmark,FileDown,Building2,Target,Quote,CalendarDays,Users,Euro} from 'lucide-react';
 import {COMMITTEES,MINISTRIES,SOURCES,committeeById,type Dashboard,type Item,type Briefing,type Change} from '../src/model';
 import {TOPICS,topicById,type TopicMatch} from '../src/server/topics';
-import {withTopics,type LobbyProject} from '../src/server/lobby';
-import {recency,datumsteil as datumsteilRoh,suchtext,bewegungswort,datum,nurTag} from '../src/ui/format';
+import type {LobbyProject} from '../src/server/lobby';
+import {recency,datumsteil as datumsteilRoh,suchtext,bewegungswort,datum,nurTag,withTopics} from '../src/ui/format';
 // Statischer Betrieb auf GitHub Pages: kein Server, kein Schlüssel. Die Seite liest den Stand,
 // den der tägliche Lauf in bootstrap.json geschrieben hat. Alles, was einen Server braucht, entfällt.
 const STATIC=process.env.NEXT_PUBLIC_STATIC==='1';
@@ -184,7 +184,10 @@ export default function Home(){
    // Die Karte zeigt vier und nennt den Rest. Ohne Themenfilter ist "Rest" die gezaehlte Gesamtzahl,
    // die auch die von der Kappung nicht mitgefuehrten Vorhaben einschliesst.
    const gesamt=topic?vs.length:Math.max(vs.length,e.topicProjects??vs.length);
-   if(!vs.length)return e.projects>0?<p className="lobby-felder">{e.projects} Vorhaben gemeldet, keines davon zu deinen Themen.</p>:null;
+   // Unter Themenfilter hiess es "keines davon zu deinen Themen" - auch auf der Karte von TRUMPF, deren fuenf Vorhaben
+   // alle deine Themen beruehren, nur nicht Laser. 52 Karten sagten unter einem Filter so etwas Falsches.
+   const andere=withTopics(e.projectList??[]).length;
+   if(!vs.length)return e.projects>0?<p className="lobby-felder">{e.projects} Vorhaben gemeldet{topic?<>, keines zum Thema {topicById(topic)?.label}{andere?` – ${andere} zu anderen deiner Themen`:''}.</>:', keines davon zu deinen Themen.'}</p>:null;
    return <div className="vorhaben"><span className="vorhaben-kopf">Arbeitet an diesen Vorhaben zu deinen Themen</span>
     {vs.slice(0,4).map((v:LobbyProject)=>{const ziel=v.documentUrl??v.projectUrl;
      const inhalt=<><strong>{v.title}</strong><span>{v.topics.map(id=>topicById(id)?.label).filter(Boolean).join(' · ')}{v.printingNumber?` · Drucksache ${v.printingNumber}`:''}{ziel?' ':''}{ziel&&<ArrowUpRight size={12}/>}</span></>;

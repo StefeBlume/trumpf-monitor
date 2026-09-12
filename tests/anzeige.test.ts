@@ -298,3 +298,27 @@ test('Das README nennt die Werte und Regeln, die der Code verwendet',()=>{
  assert.ok(!readme.includes('`EUV` treffen nur in Großschreibung'),'EUV verlangt einen Halbleiterbezug im Satz');
  assert.ok(readme.includes('`ERFASSUNGSSTAND`')&&monitor.includes('export const ERFASSUNGSSTAND'),'der Erfassungsstand ist dokumentiert und existiert');
 });
+
+// Unter dem Filter "Lasertechnik & Photonik" stand auf der Karte von TRUMPF "5 Vorhaben gemeldet, keines davon
+// zu deinen Themen" - alle fünf berühren deine Themen, nur nicht Laser. 52 Karten über neun Filter hinweg.
+test('Unter Themenfilter sagt die Akteure-Karte, welches Thema fehlt',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes('keines zum Thema {topicById(topic)?.label}'),'mit Filter wird das Thema genannt');
+ assert.ok(seite.includes('zu anderen deiner Themen'),'und die Vorhaben zu anderen Themen');
+ assert.ok(seite.includes("topic?<>, keines zum Thema"),'die allgemeine Aussage gilt nur ohne Filter');
+});
+
+// Die Oberfläche importierte withTopics aus src/server/lobby.ts. Damit landeten Connectors, der HTML-Parser
+// cheerio und ein Krypto-Ersatz im Browser: 655 KB von 1,0 MB JavaScript, auf dem Handy über Mobilfunk.
+test('Die Oberfläche lädt keinen Server-Code',()=>{
+ const erlaubt=/^\.\.\/(?:src\/)?server\/topics$/;
+ for(const datei of ['pages/index.tsx','src/ui/format.ts']){
+  const quelle=readFileSync(datei,'utf8');
+  for(const m of quelle.matchAll(/^import\s+(type\s+)?\{[^}]*\}\s+from\s+'([^']+)';/gm)){
+   const [,nurTyp,pfad]=m;
+   if(/server\//.test(pfad)&&!nurTyp)assert.match(pfad,erlaubt,`${datei} lädt ${pfad} zur Laufzeit`);
+  }
+ }
+ // topics.ts selbst darf nichts vom Server nachladen.
+ assert.ok(!/^import\s+(?!type)/m.test(readFileSync('src/server/topics.ts','utf8')),'topics.ts bleibt ohne Laufzeit-Importe');
+});
