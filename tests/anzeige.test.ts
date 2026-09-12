@@ -217,3 +217,12 @@ test('Das README beschreibt Aufbewahrung und BAFA-Quelle zutreffend',()=>{
  assert.match(monitor,/RETENTION_DAYS\?\?10/,'README und Code nennen dieselbe Frist');
  assert.match(monitor,/ORDER BY rowid DESC LIMIT 60/,'README und Code nennen dieselbe Zahl gespeicherter Briefings');
 });
+
+// "Veröffentlicht: 14. Okt. 2026" stand bei einer Anhörung, die erst stattfindet; bei Tagesordnungen hätte
+// "Dokument vom" den Sitzungstag bezeichnet.
+test('Termine heißen Termine, nicht Veröffentlichungen',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes("[istTermin(selected)?'Termin':'Veröffentlicht',date(selected.publishedAt)]"),'die Dokumentansicht unterscheidet');
+ assert.equal((seite.match(/\{istTermin\(item\)\?'Sitzung am':'Dokument vom'\}/g)??[]).length,2,'beide Kartenformen unterscheiden');
+ assert.ok(seite.includes('&&istTermin(i);'),'"Als Nächstes" nutzt dieselbe Bestimmung');
+});

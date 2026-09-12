@@ -53,6 +53,16 @@ export function mapProject(p:any):LobbyProject|null{
   printingNumber:pm.printingNumber?clean(pm.printingNumber):null,documentUrl:doc,projectUrl:vorgang};
 }
 const num=(x:unknown):number|null=>typeof x==='number'&&Number.isFinite(x)?x:null;
+// Die Ausgaben gehoeren zu ihrem eigenen Geschaeftsjahr, nicht zu dem der Beschaeftigtenangabe. Und ein
+// Geschaeftsjahr ist nicht immer ein Kalenderjahr: TRUMPF meldet 1. Juli 2024 bis 30. Juni 2025. Aus dem
+// Enddatum allein stand "(2025)" neben dem Betrag.
+export function geschaeftsjahr(angabe:any):string|null{
+ const ende=typeof angabe?.relatedFiscalYearEnd==='string'?angabe.relatedFiscalYearEnd:null;
+ if(!ende||!/^\d{4}-\d{2}-\d{2}/.test(ende))return null;
+ const start=typeof angabe?.relatedFiscalYearStart==='string'&&/^\d{4}-\d{2}-\d{2}/.test(angabe.relatedFiscalYearStart)?angabe.relatedFiscalYearStart:null;
+ if(!start||start.slice(0,4)===ende.slice(0,4))return ende.slice(0,4);
+ return `${start.slice(0,4)}/${ende.slice(2,4)}`;
+}
 export function mapLobbyResult(r:any,topic:string):LobbyEntry|null{
  const nr=typeof r?.registerNumber==='string'?r.registerNumber:null;
  const name=clean(r?.lobbyistIdentity?.name);
@@ -67,7 +77,7 @@ export function mapLobbyResult(r:any,topic:string):LobbyEntry|null{
  statements:num(r.statements?.statementsCount)??0,
  staffFte:num(emp.employeeFTE),
  spendFrom:num(euro.from),spendTo:num(euro.to),
- fiscalYear:typeof emp.relatedFiscalYearEnd==='string'?emp.relatedFiscalYearEnd.slice(0,4):null,
+ fiscalYear:geschaeftsjahr(fin)??geschaeftsjahr(emp),
  updatedAt:typeof r.registerEntryDetails?.validFromDate==='string'?r.registerEntryDetails.validFromDate:null,
  own:nr===OWN_REGISTER_NUMBER};
 }

@@ -154,3 +154,15 @@ test('Industrielle KI verlangt den Industriebezug im selben Satz',()=>{
 test('Beim Wirtschaftsstandort genügt der Bezug im Dokument',()=>{
  assert.ok(scanTopics('Neuaufstellung der Gemeinschaftsaufgabe','Der Fachkräftemangel verschärft sich. Viele Unternehmen in der Region suchen Personal.').some(m=>m.topic==='standort'));
 });
+
+// "EUV" ist in Gesetzestexten der EU-Vertrag. Das Nachrichtendienstrecht ("Artikel 4 Absatz 2 Satz 3 EUV"),
+// die Verwaltungsgerichtsordnung ("Streinz, EUV/AEUV") und eine Anfrage zu Artikel 2 EUV waren
+// Halbleiter-Treffer. Alle 11 Fundstellen in 265 Drucksachen meinten den Vertrag.
+test('Der EU-Vertrag ist keine EUV-Lithografie',()=>{
+ const hl=(b:string)=>scanTopics('Gesetzentwurf',b).some(m=>m.topic==='halbleiter');
+ assert.equal(hl('Unionsrecht findet nach Artikel 4 Absatz 2 Satz 3 EUV keine Anwendung.'),false);
+ assert.equal(hl('Vergleiche Streinz, EUV/AEUV, 3. Auflage 2018.'),false);
+ assert.equal(hl('Die Einhaltung der in Artikel 2 des Vertrags über die Europäische Union (EUV) verankerten Werte.'),false);
+ assert.equal(hl('Die EUV-Belichtung ist Voraussetzung der modernsten Chips.'),true,'EUV mit Halbleiterbezug bleibt ein Treffer');
+ assert.equal(hl('TRUMPF liefert Laserverstärker für EUV-Anlagen.'),true);
+});

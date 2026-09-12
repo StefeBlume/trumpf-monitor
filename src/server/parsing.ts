@@ -44,6 +44,15 @@ export function germanDate(value:string):string|null{
  if(isNaN(d.getTime())||d.getUTCDate()!==day||d.getUTCMonth()!==month||d.getUTCFullYear()!==year)return null;
  return d.toISOString();
 }
+// Die Tagesordnungsliste fuehrt in der ersten Spalte den Tag der Veroeffentlichung. Der Sitzungstag steht
+// nur im Titel: "41. Sitzung am Mittwoch, dem 9. September 2026, 8:30 Uhr" erschien am 7. September. Mit
+// dem Veroeffentlichungstag verschwand jede Sitzung schon vor ihrem Termin aus "Als Naechstes".
+// Genommen wird nur ein Datum hinter "am", damit "Gesetz vom 19. Mai 2026" nicht als Sitzung gilt.
+// Die Liste schreibt "am Mittwoch, dem 9. September" ebenso wie "am Dienstag, den 8. September".
+export function sitzungstag(titel:string):string|null{
+ const m=/\bam\s+(?:[A-Za-zäöü]+,\s*)?(?:de[mn]\s+)?(\d{1,2}\.\s*[A-Za-zä]+\s+\d{4})/.exec(clean(titel??''));
+ return m?germanDate(m[1]):null;
+}
 // Termin- und Anhoerungslisten der Ausschuesse: h4 traegt das Datum, die folgende Linkliste die Termine.
 export function parseCommitteeEvents(html:string,base:string):{title:string;url:string;date:string|null}[]{
  const $=load(html);const out:{title:string;url:string;date:string|null}[]=[];

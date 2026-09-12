@@ -30,7 +30,10 @@ export const TOPICS:Topic[] = [
   ignore:[BEHOERDENNAME]},
  {id:'halbleiter',label:'Halbleiter & EUV',why:'TRUMPF liefert die Laserverstärker für die EUV-Lithografie.',
   terms:['halbleiter','mikroelektronik','chipfertigung','chipindustrie','chips act','mikrochip','lithografie','lithographie','semiconductor','waferfertigung','leistungshalbleiter'],
-  strict:['EUV']},
+  // "EUV" ist in Gesetzestexten der Vertrag ueber die Europaeische Union: "Artikel 4 Absatz 2 EUV",
+  // "Streinz, EUV/AEUV". Alle 11 Fundstellen in 265 Drucksachen meinten den Vertrag, keine die Lithografie.
+  // Die Abkuerzung zaehlt deshalb nur mit einem Halbleiterwort im selben Satz.
+  context:{terms:['EUV'],with:['lithografie','lithographie','halbleiter','chip','wafer','belichtung','laserverstärker','extrem-ultraviolett','ultraviolett'],naehe:'satz'}},
  {id:'laser',label:'Lasertechnik & Photonik',why:'Kerngeschäft: Strahlquellen, Laserschneiden, Laserschweißen.',
   // "laser" taucht in 200 Drucksachen genau einmal auf - der Begriff ist eindeutig genug, um alle
   // Zusammensetzungen von Laserschutz bis Laserstrahlquelle zu fassen, ohne Rauschen zu erzeugen.

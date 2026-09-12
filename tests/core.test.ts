@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {parseFeed,contentHash,officialURL,germanDate,parseCommitteeEvents,parseAgendaTable} from '../src/server/parsing';
+import {parseFeed,contentHash,officialURL,germanDate,parseCommitteeEvents,parseAgendaTable,sitzungstag} from '../src/server/parsing';
 import {mapCommitteePosition,mapFulltextDrucksache,matchCommitteeName,lookbackStart,datumAusAdresse,rssNachbereiten} from '../src/server/connectors';
 import {berlinClock,runMonitor,dashboard,history,briefingSummary,seedFromSnapshot} from '../src/server/monitor';
 import {resetDBForTests} from '../src/server/db';import {COMMITTEES,MINISTRIES,type DocumentInput,type Item,type Source} from '../src/model';
@@ -602,3 +602,20 @@ test('Beim ersten Abruf einer Quelle bleiben Meldungen ohne Datum draußen',asyn
  const neu=await runMonitor({sources:[feed],fetcher:async()=>[archiv,datiert,{...archiv,externalId:'eka-2026-09',title:'Exportkontrolle Aktuell September 2026'}],retentionDays:10});
  assert.equal(neu?.items.length,1,'eine später erschienene Meldung ohne Datum kommt herein');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Die erste Spalte der Tagesordnungsliste ist der Tag der Veroeffentlichung. "41. Sitzung am Mittwoch, dem
+// 9. September 2026" erschien am 7. September - und fiel ab dem 8. aus "Als Naechstes", obwohl sie noch bevorstand.
+test('Eine Tagesordnung trägt ihren Sitzungstag als Termin',async()=>{
+ assert.equal(sitzungstag('41. Sitzung am Mittwoch, dem 9. September 2026, 8:30 Uhr - nichtöffentlich')?.slice(0,10),'2026-09-09');
+ assert.equal(sitzungstag('2. Änderungsmitteilung zur 45. (Sonder-)Sitzung am Dienstag, 8. September 2026')?.slice(0,10),'2026-09-08');
+ // Wortgleich aus der amtlichen Liste: "den" statt "dem", und ein Datum ohne Leerzeichen.
+ assert.equal(sitzungstag('2. Änderungsmitteilung zur 45. (Sonder-)Sitzung am Dienstag, den 8. September 2026, 10 Minuten nach Ende der Plenarsitzung (ca. 19:45 Uhr), Paul-Löbe-Haus, Sitzungssaal PLH E.200 - nicht öffentlich')?.slice(0,10),'2026-09-08');
+ assert.equal(sitzungstag('1. Änderungs-/Ergänzungsmitteilung zur Tagesordnung der 29. Sitzung des Auswärtigen Ausschusses am 9.September 2026')?.slice(0,10),'2026-09-09');
+ assert.equal(sitzungstag('Tagesordnung für die 33. Sitzung des Verteidigungsausschusses'),null,'ohne Datum im Titel bleibt es beim Listendatum');
+ assert.equal(sitzungstag('Beratung zum Gesetz vom 19. Mai 2026'),null,'ein Datum hinter "vom" ist kein Sitzungstag');
+ const {asItem}=await import('../src/server/monitor');
+ const gespeichert=asItem({...doc,documentType:'Tagesordnung',title:'41. Sitzung am Mittwoch, dem 9. September 2026, 8:30 Uhr',publishedAt:'2026-09-07T00:00:00.000Z',updatedAt:'2026-09-07T00:00:00.000Z'});
+ assert.equal(gespeichert.publishedAt?.slice(0,10),'2026-09-09','gespeicherte Stände zeigen den Sitzungstag');
+ assert.equal(gespeichert.updatedAt?.slice(0,10),'2026-09-07','die Veröffentlichung bleibt die letzte Bewegung');
+ assert.equal(asItem({...doc,title:'Gesetz am 1. Mai 2026',publishedAt:'2026-04-01T00:00:00.000Z'}).publishedAt?.slice(0,10),'2026-04-01','nur Tagesordnungen werden umgedeutet');
+});

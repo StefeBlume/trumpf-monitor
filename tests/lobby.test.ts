@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {LOBBY_QUERIES,OWN_REGISTER_NUMBER,mapLobbyResult,mergeEntries,relevantEntries,type LobbyEntry} from '../src/server/lobby';
+import {LOBBY_QUERIES,OWN_REGISTER_NUMBER,mapLobbyResult,mergeEntries,relevantEntries,geschaeftsjahr,type LobbyEntry} from '../src/server/lobby';
 import {TOPICS} from '../src/server/topics';
 import {runMonitor,dashboard,refreshLobby} from '../src/server/monitor';
 import {resetDBForTests} from '../src/server/db';
@@ -246,4 +246,17 @@ test('Eine gespeicherte Kappung aus einer früheren Fassung wird neu geholt',asy
  await enrichProjects([{...bau('R1',['ki']),projects:200,updatedAt:'2026-01-01'}],
   new Map([['R1',neu[0]]]),async()=>{zweite++;return [];});
  assert.equal(zweite,0);
+});
+
+// Das Register meldet fuer TRUMPF 1. Juli 2024 bis 30. Juni 2025. Die App nahm das Enddatum der
+// Beschaeftigtenangabe und schrieb "(2025)" neben die Ausgaben.
+test('Das Geschäftsjahr der Ausgaben wird vollständig genannt',()=>{
+ const e=mapLobbyResult({...echt,
+  employeesInvolvedInLobbying:{employeeFTE:1.5,relatedFiscalYearStart:'2023-07-01',relatedFiscalYearEnd:'2024-06-30'},
+  financialExpenses:{financialExpensesEuro:{from:220001,to:230000},relatedFiscalYearStart:'2024-07-01',relatedFiscalYearEnd:'2025-06-30'}},'laser')!;
+ assert.equal(e.fiscalYear,'2024/25','die Ausgaben bestimmen das Jahr, und es läuft über den Jahreswechsel');
+ assert.equal(geschaeftsjahr({relatedFiscalYearStart:'2025-01-01',relatedFiscalYearEnd:'2025-12-31'}),'2025','ein Kalenderjahr bleibt ein Jahr');
+ assert.equal(geschaeftsjahr({relatedFiscalYearEnd:'2025-06-30'}),'2025','ohne Beginn bleibt das Endjahr');
+ assert.equal(geschaeftsjahr({}),null);
+ assert.equal(geschaeftsjahr({relatedFiscalYearEnd:'unbekannt'}),null);
 });

@@ -1,5 +1,5 @@
 import {SOURCES,COMMITTEES,MINISTRIES,committeeByKuerzel,type Source,type DocumentInput} from '../model';
-import {parseFeed,parseCommitteeEvents,parseAgendaTable,officialURL,clean,dipUrl} from './parsing';
+import {parseFeed,parseCommitteeEvents,parseAgendaTable,officialURL,clean,dipUrl,sitzungstag} from './parsing';
 import {scanTopics} from './topics';
 export function configuredSources():Source[]{return SOURCES.map(s=>({...s,...(s.kind==='rss'&&s.env&&process.env[s.env]?{feed:process.env[s.env]}:{})}));}
 export class PermanentSourceError extends Error {}
@@ -128,7 +128,7 @@ export async function agendaDocuments():Promise<DocumentInput[]>{
  const url=`${FILTERLIST}1061622-1061622?offset=0&limit=50&noFilterSet=true`;
  return parseAgendaTable(await fetchOfficial(url),url).flatMap(row=>{
  const id=matchCommitteeName(row.committee);
- return id?[{externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,updatedAt:row.date,topics:scanTopics(row.title),documentType:'Tagesordnung',step:'Sitzungstermin',
+ return id?[{externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:sitzungstag(row.title)??row.date,updatedAt:row.date,topics:scanTopics(row.title),documentType:'Tagesordnung',step:'Sitzungstermin',
  procedure:null,documentNumber:null,pdfUrl:row.url.endsWith('.pdf')?row.url:null,committees:[id],lead:id,ministries:[],originator:null}]:[];
  });
 }

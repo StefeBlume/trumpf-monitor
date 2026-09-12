@@ -1,7 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
-import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash,dipUrl} from './parsing';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
+import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash,dipUrl,sitzungstag} from './parsing';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
 // Stände aus einer früheren Fassung tragen neuere Felder noch nicht. Jeder Leser bekommt deshalb
 // vollständige Listen, statt an einem fehlenden Feld zu scheitern - genau daran brach ein Lauf ab.
 // Die kurzen DIP-Adressen aus frueheren Fassungen fuehren auf "Seite nicht gefunden". Ein Eintrag
@@ -36,7 +36,10 @@ export function asItem(raw:unknown):Item{
   topics:Array.isArray(i.topics)?i.topics:[],
   committees:Array.isArray(i.committees)?i.committees:[],
   ministries:Array.isArray(i.ministries)?i.ministries:[],
-  updatedAt:i.updatedAt??null,publishedAt:i.publishedAt??null,
+  updatedAt:i.updatedAt??null,
+  // Gespeicherte Tagesordnungen trugen den Veroeffentlichungstag als Termin. Ohne Reparatur beim Lesen
+  // galten sie beim naechsten Abruf als geaendert, obwohl sich an der Quelle nichts bewegt hatte.
+  publishedAt:(i.documentType==='Tagesordnung'?sitzungstag(i.title??''):null)??i.publishedAt??null,
   archived:i.archived===true};
 }
 // Briefings tragen ganze Dokumente mit. Zwoelf Briefings mit je zwoelf Eintraegen genuegen fuer den
