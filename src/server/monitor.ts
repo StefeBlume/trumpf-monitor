@@ -1,7 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
-import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash} from './parsing';import {lobbyEntries,type LobbyEntry} from './lobby';
+import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash} from './parsing';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
 export function berlinClock(date=new Date()){const parts=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(date);const get=(t:string)=>parts.find(p=>p.type===t)!.value;return {day:`${get('year')}-${get('month')}-${get('day')}`,hour:Number(get('hour'))};}
 export async function dashboard():Promise<Dashboard>{const c=await db();const [items,states,briefings,events,lobby]=await Promise.all([c.execute('SELECT data FROM items'),c.execute('SELECT id,data FROM source_state'),c.execute('SELECT data FROM briefings ORDER BY rowid DESC LIMIT 60'),c.execute('SELECT data FROM events ORDER BY rowid DESC LIMIT 300'),c.execute('SELECT data FROM lobby')]);const state=new Map(states.rows.map(s=>[s.id,JSON.parse(String(s.data))]));return {items:items.rows.map(r=>JSON.parse(String(r.data))),sources:configuredSources().map(s=>({...s,...state.get(s.id),status:state.get(s.id)?.status??(s.kind==='manual'?'manual':s.env&&!process.env[s.env]&&s.kind!=='rss'?'setup':'pending')})),briefings:briefings.rows.map(r=>JSON.parse(String(r.data))).sort((a:Briefing,b:Briefing)=>b.createdAt.localeCompare(a.createdAt)),events:events.rows.map(r=>JSON.parse(String(r.data))).sort((a:Event,b:Event)=>b.at.localeCompare(a.at)),lobby:lobby.rows.map(r=>JSON.parse(String(r.data))),serverTime:new Date().toISOString(),scheduleEnabled:process.env.SCHEDULE_ENABLED==='true'};}
 export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed:number,manual:number):string{
@@ -21,6 +21,11 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  try{
  const all=options.sources??configuredSources();const initial=await dashboard();const existing=new Map(initial.items.map(i=>[i.id,i]));const states=new Map(initial.sources.map(s=>[s.id,s]));
  const updated:Item[]=[];let ok=0,failed=0,manual=0;const errors:string[]=[];
+ // Dieselbe Drucksache kommt aus zwei Richtungen: als Ausschussueberweisung (mit Gremien, aber nur
+ // Titel durchsucht) und aus der Volltextsuche (mit Themen, aber ohne Gremien). Die erste Quelle
+ // gewinnt und erbt die Themen der zweiten; die Dublette wird nicht angelegt und ein Rest aus einem
+ // frueheren Lauf entfernt. So steht jedes Papier genau einmal in der App, mit allen Angaben.
+ const jeDrucksache=new Map<string,Item>();
  for(const source of all){
  // Das Lobbyregister liefert Akteure statt Dokumente und laeuft deshalb an der Dokumentpruefung vorbei.
  if(source.kind==='lobby'){
@@ -42,9 +47,23 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const baseline=!states.get(source.id)?.checkedAt&&!initial.items.some(i=>i.sourceId===source.id);
  const statements:any[]=[];const sourceUpdates:Item[]=[];
  for(const doc of new Map(docs.map(d=>[d.externalId,d])).values()){
- const itemId=createHash('sha256').update(source.id+'|'+doc.externalId).digest('hex').slice(0,24);const old=existing.get(itemId),hash=contentHash(doc);
+ const itemId=createHash('sha256').update(source.id+'|'+doc.externalId).digest('hex').slice(0,24);
+ const zwilling=doc.documentNumber?jeDrucksache.get(doc.documentNumber):undefined;
+ if(zwilling){
+ const themen=[...zwilling.topics];
+ for(const t of doc.topics)if(!themen.some(x=>x.topic===t.topic))themen.push(t);
+ const ressorts=[...new Set([...zwilling.ministries,...doc.ministries])];
+ if(themen.length!==zwilling.topics.length||ressorts.length!==zwilling.ministries.length){
+ Object.assign(zwilling,{topics:themen,ministries:ressorts});
+ statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify(zwilling),zwilling.id]});
+ }
+ statements.push({sql:'DELETE FROM items WHERE id=?',args:[itemId]});
+ continue;
+ }
+ const old=existing.get(itemId),hash=contentHash(doc);
  const change=old?(hash===old.hash?'unchanged':'changed'):(baseline?'baseline':'new');
  const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(hash!==old.hash?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false};
+ if(item.documentNumber)jeDrucksache.set(item.documentNumber,item);
  statements.push({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[itemId,source.id,JSON.stringify(item)]});
  if(change!=='unchanged'){
  const event:Event={id:randomUUID(),itemId,title:item.title,at:now,change,sourceId:source.id,version:item.version};
@@ -59,7 +78,7 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  // Renew owner-specific lease between sources.
  await c.execute({sql:'UPDATE locks SET expires=? WHERE id=? AND owner=?',args:[Date.now()+600000,'monitor',id]});
  }
- const retention=options.retentionDays??Number(process.env.RETENTION_DAYS??180);
+ const retention=options.retentionDays??Number(process.env.RETENTION_DAYS??10);
  if(retention>0&&ok)await prune(retention);
  const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated,coverage:{ok,failed,manual},errors};
  // Jeder Lauf wird dokumentiert, sonst zeigt das Lagebild die Meldung eines aelteren Laufs neben
@@ -92,12 +111,16 @@ export async function seedFromSnapshot(snapshot:{items?:Item[];events?:Event[];b
  return items.length;
 }
 
-// Ohne Aufbewahrungsgrenze waechst der veroeffentlichte Stand unbegrenzt und die Seite wird auf dem
-// Handy langsam. Archiviertes bleibt, weil es bewusst aufgehoben wurde.
+// Entfernt, was aelter als die Aufbewahrungsfrist ist. Massstab ist das Datum des Dokuments selbst
+// (Bewegung laut Quelle, sonst Veroeffentlichung, sonst Erstkontakt) - nicht der letzte Abruf, sonst
+// blieben monatealte Papiere liegen, nur weil die App sie gestern wiedergesehen hat.
+// Kuenftige Termine haben ein Datum in der Zukunft und werden dadurch nie entfernt.
+// Archiviertes bleibt, weil es bewusst aufgehoben wurde.
 export async function prune(days:number):Promise<number>{
  const c=await db();
  const cutoff=new Date(Date.now()-days*86400000).toISOString();
- const stale=await c.execute({sql:"SELECT id FROM items WHERE json_extract(data,'$.archived')=0 AND json_extract(data,'$.lastSeen')<?",args:[cutoff]});
+ const stale=await c.execute({sql:`SELECT id FROM items WHERE json_extract(data,'$.archived')=0
+  AND COALESCE(json_extract(data,'$.updatedAt'),json_extract(data,'$.publishedAt'),json_extract(data,'$.firstSeen'))<?`,args:[cutoff]});
  const ids=stale.rows.map(r=>String(r.id));
  if(!ids.length)return 0;
  const list=ids.map(()=>'?').join(',');
@@ -115,7 +138,10 @@ export async function refreshLobby(fetcher:()=>Promise<LobbyEntry[]>=lobbyEntrie
  const entries=await fetcher();
  if(!entries.length)throw new Error('Lobbyregister lieferte keine Einträge');
  const c=await db();
+ // Bereits geholte Vorhaben uebernehmen, statt sie bei jedem Lauf neu zu laden.
+ const bekannt=new Map((await c.execute('SELECT data FROM lobby')).rows.map(r=>{const e=JSON.parse(String(r.data)) as LobbyEntry;return [e.registerNumber,e];}));
+ const mitVorhaben=await enrichProjects(entries,bekannt);
  await c.batch([{sql:'DELETE FROM lobby',args:[]},
- ...entries.map(e=>({sql:'INSERT INTO lobby(register_number,data) VALUES(?,?)',args:[e.registerNumber,JSON.stringify(e)]}))],'write');
- return entries.length;
+ ...mitVorhaben.map(e=>({sql:'INSERT INTO lobby(register_number,data) VALUES(?,?)',args:[e.registerNumber,JSON.stringify(e)]}))],'write');
+ return mitVorhaben.length;
 }

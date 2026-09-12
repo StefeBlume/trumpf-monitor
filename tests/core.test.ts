@@ -114,7 +114,7 @@ test('06:00 Berlin handles summer and winter offsets',()=>{assert.equal(berlinCl
 test('Persistent runs distinguish baseline, unchanged, new, changed and source failure',async()=>{const dir=mkdtempSync(join(tmpdir(),'policy-test-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');const source:Source={id:'test',name:'Test',institution:'Test',url:doc.url,kind:'committee-dip',note:'Fixture'};try{
  const first=await runMonitor({sources:[source],fetcher:async()=>[doc]});assert.equal(first?.items[0].change,'baseline');
  const second=await runMonitor({sources:[source],fetcher:async()=>[doc]});assert.equal(second?.items.length,0);
- const third=await runMonitor({sources:[source],fetcher:async()=>[{...doc,step:'Beschlussempfehlung und Bericht'},{...doc,externalId:'2',title:'Forschungszulage',committees:['ftr'],lead:'ftr'}]});
+ const third=await runMonitor({sources:[source],fetcher:async()=>[{...doc,step:'Beschlussempfehlung und Bericht'},{...doc,externalId:'2',title:'Forschungszulage',documentNumber:'21/5678',committees:['ftr'],lead:'ftr'}]});
  assert.equal(third?.items.find(i=>i.externalId==='1')?.change,'changed');assert.equal(third?.items.find(i=>i.externalId==='2')?.change,'new');
  const d=await dashboard();const h=await history(d.items.find(i=>i.externalId==='1')!.id);assert.equal(h.versions.length,2);assert.ok(h.diff.some(p=>p.added));
  const failure=await runMonitor({sources:[source],fetcher:async()=>{throw new Error('offline');}});assert.equal(failure?.coverage.failed,1);assert.match(failure!.summary,/Keine belastbare Aussage/);assert.equal((await dashboard()).items.length,2);
@@ -204,4 +204,33 @@ test('Briefings und Änderungslog kommen chronologisch, auch nach Wiederaufbau',
  assert.deepEqual(zeiten,[...zeiten].sort().reverse(),'Briefings müssen absteigend nach Zeit stehen');
  const log=nach.events.map(e=>e.at);
  assert.deepEqual(log,[...log].sort().reverse(),'das Änderungslog muss absteigend nach Zeit stehen');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Dieselbe Drucksache kommt als Ausschussueberweisung und aus der Volltextsuche. Zwei Zeilen fuer
+// dasselbe Papier waren in der Oberflaeche sichtbar, und die Ausschusszeile kannte die Themen nicht.
+test('Dieselbe Drucksache aus zwei Quellen wird zu einem Eintrag zusammengeführt',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-merge-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const ausschuss:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ const volltext:Source={id:'dip-drucksachen',name:'V',institution:'Bundestag',url:doc.url,kind:'fulltext-dip',note:'Fixture'};
+ try{
+ await runMonitor({sources:[ausschuss,volltext],fetcher:async(s)=>s.id==='dip-committees'
+  ? [{...doc,externalId:'pos-1',documentNumber:'21/999',committees:['we'],lead:'we',topics:[]}]
+  : [{...doc,externalId:'drs-1',documentNumber:'21/999',committees:[],lead:null,ministries:['bmwe'],
+      topics:[{topic:'halbleiter',terms:['halbleiter'],count:7,inTitle:false,snippet:'… Halbleiter …'}]}]});
+ const items=(await dashboard()).items;
+ assert.equal(items.length,1,'das Papier darf nur einmal erscheinen');
+ const i=items[0];
+ assert.equal(i.sourceId,'dip-committees','die Ausschussquelle behält die Führung');
+ assert.deepEqual(i.committees,['we'],'die Gremienzuordnung bleibt erhalten');
+ assert.deepEqual(i.ministries,['bmwe'],'das Ressort der zweiten Quelle kommt dazu');
+ assert.deepEqual(i.topics.map(t=>t.topic),['halbleiter'],'die Themen aus dem Volltext werden vererbt');
+ // Ein zweiter Lauf darf die Dublette nicht wieder anlegen.
+ await runMonitor({sources:[ausschuss,volltext],fetcher:async(s)=>s.id==='dip-committees'
+  ? [{...doc,externalId:'pos-1',documentNumber:'21/999',committees:['we'],lead:'we',topics:[]}]
+  : [{...doc,externalId:'drs-1',documentNumber:'21/999',committees:[],lead:null,ministries:['bmwe'],topics:[]}]});
+ assert.equal((await dashboard()).items.length,1);
+ // Verschiedene Drucksachennummern bleiben getrennt.
+ await runMonitor({sources:[ausschuss],fetcher:async()=>[
+  {...doc,externalId:'a',documentNumber:'21/111'},{...doc,externalId:'b',documentNumber:'21/222'}]});
+ assert.equal((await dashboard()).items.length,3);
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});

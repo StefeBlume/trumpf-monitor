@@ -22,7 +22,7 @@ export const TOPICS:Topic[] = [
   // Zusammensetzungen von Laserschutz bis Laserstrahlquelle zu fassen, ohne Rauschen zu erzeugen.
   terms:['laser','photonik','optische technologien','ultrakurzpuls','strahlquelle']},
  {id:'maschinen',label:'Werkzeugmaschinen & Fertigung',why:'Zweites Kerngeschäft: Blechbearbeitung, Stanzen, Biegen, Automatisierung.',
-  terms:['werkzeugmaschine','maschinenbau','blechbearbeitung','fertigungstechnik','maschinenverordnung','maschinenrichtlinie','produktsicherheitsgesetz','additive fertigung','3d-druck','industrie 4.0','smart factory','ce-kennzeichnung','betriebssicherheitsverordnung']},
+  terms:['werkzeugmaschine','maschinenbau','maschinensicherheit','blechbearbeitung','fertigungstechnik','maschinenverordnung','maschinenrichtlinie','produktsicherheit','additive fertigung','3d-druck','industrie 4.0','smart factory','ce-kennzeichnung','betriebssicherheitsverordnung']},
  {id:'ki',label:'Industrielle KI',why:'KI in Fertigung und Maschinensteuerung: KI-Verordnung, Hochrisiko-Einstufung von Maschinen, Fertigungssoftware.',
   terms:['ki-verordnung','ki-gesetz','hochrisiko-ki','ai act','industrielle ki','ki in der produktion','ki-gestützte fertigung','predictive maintenance'],
   context:{terms:['künstliche intelligenz','maschinelles lernen','artificial intelligence','ki-system','ki-modell','ki-anwendung','algorithmische entscheidung'],
@@ -34,7 +34,8 @@ export const TOPICS:Topic[] = [
   context:{terms:['energiepreis','bürokratieabbau','bürokratieentlastung','fachkräftemangel'],
    with:['industrie','produktion','fertigung','mittelstand','unternehmen','maschinenbau','wirtschaft']}},
  {id:'lieferkette',label:'Lieferketten & Rohstoffe',why:'Seltene Erden und Vorprodukte hängen an Handels- und Lieferkettenrecht.',
-  terms:['lieferkette','seltene erden','kritische rohstoffe','rohstoffversorgung','versorgungssicherheit','lieferkettensorgfaltspflichten','critical raw materials','handelsabkommen','zollsatz','einfuhrzoll']},
+  terms:['lieferkette','seltene erden','kritische rohstoffe','rohstoffversorgung','versorgungssicherheit','lieferkettensorgfaltspflichten','critical raw materials','handelsabkommen','zollsatz','einfuhrzoll','reach-verordnung','stoffbeschränkung','chemikalienrecht'],
+  strict:['PFAS','REACH']},
  {id:'familie',label:'Familienunternehmen & Mittelstand',why:'TRUMPF ist ein Familienunternehmen; Erbschaft- und Unternehmensteuer wirken unmittelbar.',
   terms:['familienunternehmen','unternehmensnachfolge','erbschaftsteuer','betriebsvermögen','mittelständische unternehmen','thesaurierung','substanzbesteuerung']}
 ];

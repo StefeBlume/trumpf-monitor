@@ -1,6 +1,8 @@
 import {TOPICS} from './topics';
 import {fetchOfficial} from './connectors';
 import {clean} from './parsing';
+import {scanTopics} from './topics';
+import {officialURL} from './parsing';
 // Das Lobbyregister des Bundestags fuehrt, wer sich beruflich fuer welche Interessen einsetzt.
 // Je Thema eine eigene Abfrage; die Begriffe sind enger als im Volltextraster, weil das Register
 // mit Interessenfeldern arbeitet und breite Begriffe wie "Industriepolitik" tausende Eintraege
@@ -18,12 +20,32 @@ export const LOBBY_QUERIES:Record<string,string>={
 };
 // Der eigene Eintrag von TRUMPF wird immer mitgefuehrt, auch wenn er nur ein Thema traefe.
 export const OWN_REGISTER_NUMBER='R000697';
+// Ein Vorhaben, an dem ein Interessenvertreter laut eigener Angabe arbeitet. Die Drucksache verweist
+// auf das Papier im Bundestag und macht den Bezug zur Dokumentliste der App herstellbar.
+export interface LobbyProject {
+ number:string; title:string; description:string; topics:string[];
+ printingNumber:string|null; documentUrl:string|null; projectUrl:string|null;
+}
 export interface LobbyEntry {
  registerNumber:string; name:string; kind:string; url:string;
  topics:string[]; fields:string[];
  projects:number; statements:number;
  staffFte:number|null; spendFrom:number|null; spendTo:number|null; fiscalYear:string|null;
  updatedAt:string|null; own:boolean;
+ // Erst nach dem Detailabruf gefuellt. detailFor haelt fest, fuer welchen Registerstand das geschah.
+ projectList?:LobbyProject[]; detailFor?:string|null;
+}
+export function mapProject(p:any):LobbyProject|null{
+ const nummer=typeof p?.regulatoryProjectNumber==='string'?p.regulatoryProjectNumber:null;
+ const titel=clean(p?.title);
+ if(!nummer||!titel)return null;
+ const beschreibung=clean(p?.description);
+ const pm=(Array.isArray(p?.printedMatters)?p.printedMatters:[])[0]??{};
+ const doc=typeof pm.documentUrl==='string'&&officialURL(pm.documentUrl)?pm.documentUrl:null;
+ const vorgang=typeof pm.projectUrl==='string'&&officialURL(pm.projectUrl)?pm.projectUrl:null;
+ return {number:nummer,title:titel,description:beschreibung===titel?'':beschreibung,
+  topics:scanTopics(titel,beschreibung).map(m=>m.topic),
+  printingNumber:pm.printingNumber?clean(pm.printingNumber):null,documentUrl:doc,projectUrl:vorgang};
 }
 const num=(x:unknown):number|null=>typeof x==='number'&&Number.isFinite(x)?x:null;
 export function mapLobbyResult(r:any,topic:string):LobbyEntry|null{
@@ -73,4 +95,35 @@ export async function lobbyEntries():Promise<LobbyEntry[]>{
  }
  if(failed.length>TOPICS.length/2)throw new Error(`Lobbyregister überwiegend nicht erreichbar (${failed.slice(0,2).join('; ')})`);
  return relevantEntries(mergeEntries(found));
+}
+
+// Einzelabruf der Vorhaben. Das Register liefert sie nur in der Detailsuche, und die ist gross:
+// eine themenweite Abfrage sind 26 bis 43 MB. Deshalb je Eintrag einzeln und nur, wenn sich der
+// Registerstand seit dem letzten Abruf geaendert hat.
+export async function fetchProjects(registerNumber:string):Promise<LobbyProject[]>{
+ const url=`https://www.lobbyregister.bundestag.de/sucheDetailJson?q=${encodeURIComponent(registerNumber)}`;
+ const d=JSON.parse(await fetchOfficial(url,{},24*1024*1024));
+ const treffer=(Array.isArray(d.results)?d.results:[]).find((r:any)=>r?.registerNumber===registerNumber);
+ const roh=(treffer?.regulatoryProjects?.regulatoryProjects)??[];
+ return (Array.isArray(roh)?roh:[]).map(mapProject).filter((p:LobbyProject|null):p is LobbyProject=>!!p);
+}
+// Nur Vorhaben mit Themenbezug sind fuer die Uebersicht interessant; alles andere blaeht sie auf.
+export const withTopics=(ps:LobbyProject[])=>ps.filter(p=>p.topics.length);
+export const MAX_DETAIL_FETCHES=25;
+// Ergaenzt die Vorhaben. Bereits bekannte Eintraege werden uebernommen, geaenderte neu geholt,
+// und je Lauf hoechstens MAX_DETAIL_FETCHES, damit ein Lauf nicht aus dem Zeitrahmen faellt.
+export async function enrichProjects(entries:LobbyEntry[],bekannt:Map<string,LobbyEntry>,
+ holen:(nr:string)=>Promise<LobbyProject[]>=fetchProjects,grenze=MAX_DETAIL_FETCHES):Promise<LobbyEntry[]>{
+ let geholt=0;
+ const out:LobbyEntry[]=[];
+ for(const e of entries){
+  const alt=bekannt.get(e.registerNumber);
+  const aktuell=alt&&alt.detailFor===e.updatedAt&&Array.isArray(alt.projectList);
+  if(aktuell){out.push({...e,projectList:alt!.projectList,detailFor:alt!.detailFor});continue;}
+  if(e.projects===0){out.push({...e,projectList:[],detailFor:e.updatedAt});continue;}
+  if(geholt>=grenze){out.push({...e,projectList:alt?.projectList??[],detailFor:alt?.detailFor??null});continue;}
+  try{const ps=await holen(e.registerNumber);geholt++;out.push({...e,projectList:ps,detailFor:e.updatedAt});}
+  catch{out.push({...e,projectList:alt?.projectList??[],detailFor:alt?.detailFor??null});}
+ }
+ return out;
 }

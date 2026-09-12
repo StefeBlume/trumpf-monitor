@@ -37,7 +37,7 @@ export const MINISTRIES:Ministry[] = [
 export const committeeById=(id:string)=>COMMITTEES.find(c=>c.id===id);
 export const committeeByKuerzel=(k:string)=>COMMITTEES.find(c=>c.kuerzel.includes(k));
 export type Change = 'baseline'|'new'|'changed'|'unchanged';
-export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'fulltext-dip'|'committee-agenda'|'committee-events'|'rss'|'lobby'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number;}
+export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'fulltext-dip'|'committee-agenda'|'committee-events'|'ministry-drafts'|'rss'|'lobby'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number;}
 export interface DocumentInput {
  externalId:string; title:string; url:string; text:string; publishedAt:string|null;      // Datum des Dokuments bzw. des Termins
  updatedAt:string|null;        // Zeitpunkt der letzten Bewegung laut Quelle; treibt die Sortierung
@@ -61,6 +61,7 @@ export const SOURCES:Source[] = [
  {id:'dip-drucksachen',name:'Volltextsuche in allen Drucksachen',institution:'Bundestag / Bundesrat',url:'https://dip.bundestag.de/',kind:'fulltext-dip',env:'DIP_API_KEY',note:'Durchsucht die Volltexte aller Drucksachen der Wahlperiode nach den TRUMPF-Themen und behält zusätzlich alles aus den ausgewählten Ressorts. Nicht jede Drucksache führt einen Volltext mit.'},
  {id:'bt-events',name:'Anhörungen und öffentliche Sitzungen',institution:'Bundestag',url:'https://www.bundestag.de/ausschuesse',kind:'committee-events',note:'Amtliche Termin- und Anhörungslisten der ausgewählten Ausschüsse. Der Auswärtige Ausschuss tagt überwiegend nicht öffentlich und führt keine solche Liste.'},
  {id:'bt-agenda',name:'Tagesordnungen der ausgewählten Ausschüsse',institution:'Bundestag',url:'https://www.bundestag.de/ausschuesse',kind:'committee-agenda',note:'Amtliche Tagesordnungsliste mit Ausschussspalte. Der frühere RSS-Feed war auf 15 Einträge über alle Ausschüsse gedeckelt.'},
+ {id:'bmf-vorhaben',name:'Gesetzesvorhaben des BMF',institution:'BMF',url:'https://www.bundesfinanzministerium.de/Web/DE/Service/Gesetze_Gesetzesvorhaben/Gesetze_Gesetzgebungsvorhaben.html',kind:'ministry-drafts',note:'Aus der amtlichen Sitemap: Adresse und Änderungsdatum. Die Inhaltsseiten des BMF liegen hinter einem Bot-Schutz und werden nicht abgerufen, deshalb fehlt der Titel — es steht nur das Kürzel des Vorhabens.'},
  {id:'lobbyregister',name:'Interessenvertretung zu den Themen',institution:'Lobbyregister',url:'https://www.lobbyregister.bundestag.de/',kind:'lobby',note:'Amtliches Lobbyregister des Bundestags, je Thema eine eigene Abfrage. Zeigt, wer sich registriert hat — nicht, wer tatsächlich Einfluss nimmt.'},
  {id:'bafa',name:'Exportkontrolle und Außenwirtschaft',institution:'BAFA',url:'https://www.bafa.de/',feed:'https://www.bafa.de/DE/Service/RSSNewsfeed/_functions/rssnewsfeed.xml',env:'BAFA_FEED_URL',kind:'rss',note:'Allgemeiner amtlicher BAFA-Newsfeed. Kein Ausschussbezug und kein vollständiges Merkblatt-Monitoring.'}
 ];

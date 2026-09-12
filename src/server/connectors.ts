@@ -142,6 +142,42 @@ export async function ingest(source:Source,since:string,warn?:(note:string)=>voi
  if(source.kind==='fulltext-dip')return fulltextDocuments(since);
  if(source.kind==='committee-agenda')return agendaDocuments();
  if(source.kind==='committee-events')return eventDocuments(warn);
+ if(source.kind==='ministry-drafts')return ministryDrafts();
  if(source.kind==='rss'&&source.feed)return parseFeed(await fetchOfficial(source.feed),source.feed);
  throw new Error('Manuelle Ergänzung erforderlich');
+}
+
+// Gesetzesvorhaben des BMF ueber die Sitemap. Die Inhaltsseiten des Ministeriums liegen hinter
+// einem Bot-Schutz und werden bewusst nicht abgerufen - die Sitemap ist in der robots.txt
+// ausdruecklich fuer Maschinen ausgewiesen und liefert Adresse und Aenderungsdatum.
+// Der Titel bleibt deshalb unbekannt; als Bezeichnung dient das amtliche Kuerzel aus der Adresse.
+export const BMF_SITEMAP='https://www.bundesfinanzministerium.de/sitemap.xml';
+export function bmfLabel(slug:string):string{
+ return slug.replace(/^\d{4}-\d{2}-\d{2}-/,'').replace(/^G-/,'').replace(/-/g,' ')
+  .replace(/Aenderung/g,'Änderung').replace(/Ueber/g,'Über').replace(/ae/g,'ä').replace(/\s+/g,' ').trim();
+}
+export function parseMinistryDrafts(xml:string):DocumentInput[]{
+ const out:DocumentInput[]=[];
+ const paare=[...xml.matchAll(/<url>\s*<loc>([^<]+)<\/loc>\s*(?:<lastmod>([^<]*)<\/lastmod>)?/g)];
+ for(const [,loc,lastmod] of paare){
+  if(!loc.includes('Gesetze_Gesetzesvorhaben')||!officialURL(loc))continue;
+  const m=/\/(\d{4}-\d{2}-\d{2})-([^/]+)\//.exec(loc);
+  if(!m)continue;
+  const [,datum,slug]=m;
+  const bezeichnung=bmfLabel(slug);
+  if(!bezeichnung)continue;
+  out.push({externalId:loc,title:`Gesetzesvorhaben ${bezeichnung}`,url:loc,text:'',
+   publishedAt:iso(datum),updatedAt:iso(lastmod)??iso(datum),topics:scanTopics(bezeichnung),
+   documentType:'Referentenentwurf',step:'Vorbereitung im Ressort',procedure:null,documentNumber:null,pdfUrl:null,
+   committees:[],lead:null,ministries:['bmf'],originator:'Bundesministerium der Finanzen'});
+ }
+ // Alle Eintraege teilen sich eine Adresse pro Vorhaben; Dubletten aus mehreren Unterseiten entfernen.
+ const je=new Map(out.map(d=>[d.externalId,d]));
+ return [...je.values()];
+}
+export async function ministryDrafts():Promise<DocumentInput[]>{
+ const xml=await fetchOfficial(BMF_SITEMAP,{},8*1024*1024);
+ const drafts=parseMinistryDrafts(xml);
+ if(!drafts.length)throw new Error('Sitemap enthält keine Gesetzesvorhaben im erwarteten Format');
+ return drafts;
 }

@@ -42,6 +42,7 @@ Auswahl und Regel ändern: `COMMITTEES` und `MINISTRIES` in `src/model.ts`. Die 
 | DIP `drucksache-text` | API | Volltext aller Drucksachen gegen das Themenraster; zusätzlich alles aus den ausgewählten Ressorts |
 | Anhörungen und öffentliche Sitzungen | Terminlisten der Ausschüsse | je ausgewähltem Bundestagsausschuss eine eigene amtliche Liste |
 | Tagesordnungen | ausschussübergreifende Liste | Ausschussspalte gegen die Bundestagsauswahl |
+| BMF-Sitemap | XML | Gesetzesvorhaben des Bundesfinanzministeriums mit Änderungsdatum |
 | Lobbyregister | JSON-API | je Thema eine Abfrage; aufgeführt wird, wer mindestens zwei Themen berührt |
 | BAFA-Newsfeed | RSS | ungefiltert, ohne Gremienbezug |
 
@@ -53,7 +54,9 @@ Abgerufen wird inkrementell über `f.aktualisiert.start`: ab dem letzten erfolgr
 
 **Formatbrüche.** Terminlisten melden einen Fehler, wenn ein Ausschuss gar keine Einträge im erwarteten Format liefert; brechen mehr als die Hälfte, scheitert die Quelle ganz. Die Tagesordnungstabelle meldet einen Fehler, wenn Zeilen vorhanden sind, aber keine Verweise enthalten. Eine leere Liste in sitzungsfreien Wochen ist dagegen gültig. Diese Prüfungen gibt es, weil der Tagesordnungs-Parser nach einem Spaltenwechsel schon einmal still auf null lief.
 
-**Aufbewahrung.** `RETENTION_DAYS` (Standard 180) entfernt nach jedem erfolgreichen Lauf nicht archivierte Dokumente, die so lange nicht mehr in einer Quelle aufgetaucht sind, samt ihrer Versionen und Ereignisse. Ohne diese Grenze wüchsen Datenbank und veröffentlichter Stand unbegrenzt.
+**Aufbewahrung.** `RETENTION_DAYS` (Standard 10) entfernt nach jedem erfolgreichen Lauf alles, was älter ist — samt Versionen und Ereignissen. Maßstab ist das Datum des Dokuments selbst (Bewegung laut Quelle, sonst Veröffentlichung, sonst Erstkontakt), nicht der letzte Abruf: sonst blieben monatealte Papiere liegen, nur weil die App sie gestern wiedergesehen hat. Künftige Termine liegen jenseits der Frist und werden nie entfernt. Archiviertes bleibt.
+
+**Zusammenführung.** Dieselbe Drucksache erreicht die App aus zwei Richtungen: als Ausschussüberweisung (mit Gremien, aber nur der Titel durchsucht) und aus der Volltextsuche (mit Themen, aber ohne Gremien). Teilen sich zwei Einträge eine Drucksachennummer, gewinnt die Ausschussquelle und erbt Themen und Ressort der zweiten; die Dublette wird nicht angelegt und ein Rest aus einem früheren Lauf entfernt. So steht jedes Papier genau einmal in der App, mit allen Angaben.
 
 ## Setup
 
@@ -106,7 +109,17 @@ Das amtliche [Lobbyregister des Bundestags](https://www.lobbyregister.bundestag.
 
 Je Akteur zeigt die App: Art (Unternehmen, Verband, Wissenschaft), berührte Themen, Zahl der bearbeiteten Gesetzesvorhaben, Stellungnahmen, Vollzeitstellen für Interessenvertretung, jährlicher Aufwand als Spanne, Interessenfelder und den Stand des Eintrags.
 
+**Welche Vorhaben.** Die Zahl allein sagt nichts, deshalb holt die App die Vorhaben selbst: Titel, berührte Themen und die zugehörige Drucksache mit Link. Angezeigt wird nur, was eines der Themen berührt. Das Register liefert Vorhaben ausschließlich in der Detailsuche, und die ist groß — eine themenweite Abfrage sind 26 bis 43 MB. Deshalb wird je Eintrag einzeln abgerufen, nur wenn sich sein Registerstand seit dem letzten Mal geändert hat, und höchstens `MAX_DETAIL_FETCHES` (25) pro Lauf. Nach etwa vier Läufen sind alle erfasst; danach nur noch, was sich ändert.
+
 **Grenze.** Das Register zeigt, wer sich *registriert* hat und was er *selbst angibt* — nicht, wer tatsächlich Einfluss nimmt. Es ist eine Selbstauskunft mit gesetzlicher Pflicht, keine Wirkungsmessung.
+
+## Ministerien
+
+Die Websites von BMWE und BMF liegen hinter einem Bot-Schutz (Radware) und werden bewusst nicht abgerufen; eine Browser-Kennung vorzutäuschen wäre eine Umgehung. BMFTR und Auswärtiges Amt führen nichts Legislatives in maschinenlesbarer Form.
+
+Was funktioniert: die **Sitemap des BMF** ist in dessen `robots.txt` ausdrücklich für Maschinen ausgewiesen und frei abrufbar. Sie liefert Adresse, Entwurfsdatum (aus dem Pfad) und Änderungsdatum der Gesetzesvorhaben. Der Titel bleibt unbekannt, weil die Inhaltsseiten gesperrt sind — angezeigt wird das amtliche Kürzel des Vorhabens plus Link. Ein Klick öffnet die Seite im Browser, wo der Schutz normal auflöst.
+
+Ministeriumspapiere, die das Parlament erreichen, erfasst ohnehin die Volltextsuche über das Urheberfeld.
 
 **Getrennt vom Dokumentpfad.** Akteure sind keine Dokumente: sie laufen an der Änderungserkennung vorbei und werden bei jedem erfolgreichen Lauf vollständig ersetzt, weil der Registerstand die Wahrheit ist. Eine leere Antwort löscht den Bestand nicht. Fällt das Register aus, bleiben die Dokumentquellen unberührt.
 
@@ -138,7 +151,7 @@ NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
 npm test
 ```
 
-54 Tests in vier Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+65 Tests in vier Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
 
 `tests/topics.test.ts` deckt die Themensuche ab: Stimmigkeit des Rasters, Erkennung aller TRUMPF-Kernthemen, Abkürzungen nur in Großschreibung, industrieller Kontext für KI und die breiten Standortbegriffe, deutsche Beugung samt Zeilenumbruch, Zählung und Titelvermerk, Reihenfolge und die Belegqualität.
 

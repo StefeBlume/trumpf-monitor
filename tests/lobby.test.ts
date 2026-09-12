@@ -98,3 +98,81 @@ test('Ein Ausfall des Registers lässt die Dokumentquellen unberührt',async()=>
  assert.equal(d.items.length,1,'die Dokumente sind trotzdem da');
  assert.equal(d.sources.find(s=>s.id==='lobbyregister')?.status,'error');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+import {mapProject,enrichProjects,withTopics,type LobbyProject} from '../src/server/lobby';
+
+// Aus der echten Detailantwort des Registers gekürzt.
+const rohVorhaben={regulatoryProjectNumber:'RV0012620',
+ title:'Maschinensicherheit und E-Commerce',description:'Maschinensicherheit und E-Commerce',
+ printedMatters:[{title:'Antrag',printingNumber:'20/14736',issuer:'BT',
+  documentUrl:'https://dserver.bundestag.de/btd/20/147/2014736.pdf',
+  projectUrl:'https://dip.bundestag.de/vorgang/maschinensicherheit/307091'}]};
+
+test('Ein Vorhaben wird mit Drucksache und Themenbezug übernommen',()=>{
+ const v=mapProject(rohVorhaben)!;
+ assert.equal(v.number,'RV0012620');
+ assert.equal(v.title,'Maschinensicherheit und E-Commerce');
+ assert.equal(v.printingNumber,'20/14736');
+ assert.ok(v.documentUrl?.endsWith('.pdf'));
+ assert.ok(v.topics.includes('maschinen'),'genau dieses Vorhaben hatte TRUMPF selbst angemeldet');
+ // Ist die Beschreibung nur der Titel, wird sie nicht doppelt gezeigt.
+ assert.equal(v.description,'');
+});
+
+test('Vorhaben ohne Nummer oder Titel werden verworfen, fremde Adressen gefiltert',()=>{
+ for(const kaputt of [null,undefined,{},{title:'X'},{regulatoryProjectNumber:'R1'}])
+  assert.equal(mapProject(kaputt),null,JSON.stringify(kaputt));
+ const fremd=mapProject({...rohVorhaben,printedMatters:[{printingNumber:'1/1',documentUrl:'https://attacker.example/x.pdf',projectUrl:'https://attacker.example/v'}]})!;
+ assert.equal(fremd.documentUrl,null);
+ assert.equal(fremd.projectUrl,null);
+ assert.equal(fremd.printingNumber,'1/1','die Nummer selbst bleibt erhalten');
+});
+
+test('Nur Vorhaben mit Themenbezug kommen in die Übersicht',()=>{
+ const mit=mapProject(rohVorhaben)!;
+ const ohne={...mit,topics:[]};
+ assert.deepEqual(withTopics([mit,ohne]).map(v=>v.number),['RV0012620']);
+});
+
+test('Vorhaben werden nur bei geändertem Registerstand neu geholt',async()=>{
+ const v:LobbyProject[]=[mapProject(rohVorhaben)!];
+ let abrufe=0;
+ const holen=async()=>{abrufe++;return v;};
+ const e=(nr:string,stand:string,anzahl=2):LobbyEntry=>({...bau(nr,['ki','laser']),updatedAt:stand,projects:anzahl});
+ // Erster Lauf: nichts bekannt, also holen.
+ let stand=await enrichProjects([e('R1','2026-01-01'),e('R2','2026-01-01')],new Map(),holen);
+ assert.equal(abrufe,2);
+ assert.equal(stand[0].projectList?.length,1);
+ // Zweiter Lauf mit unveraendertem Registerstand: kein Abruf.
+ const bekannt=new Map(stand.map(x=>[x.registerNumber,x]));
+ stand=await enrichProjects([e('R1','2026-01-01'),e('R2','2026-01-01')],bekannt,holen);
+ assert.equal(abrufe,2,'unveränderte Einträge dürfen nicht erneut abgerufen werden');
+ assert.equal(stand[0].projectList?.length,1,'die bekannten Vorhaben bleiben erhalten');
+ // Geaenderter Stand: erneut holen.
+ stand=await enrichProjects([e('R1','2026-06-01'),e('R2','2026-01-01')],bekannt,holen);
+ assert.equal(abrufe,3);
+});
+
+test('Ohne gemeldete Vorhaben wird gar nicht erst abgerufen',async()=>{
+ let abrufe=0;
+ const stand=await enrichProjects([{...bau('R9',['ki','laser']),updatedAt:'2026-01-01',projects:0}],new Map(),async()=>{abrufe++;return [];});
+ assert.equal(abrufe,0);
+ assert.deepEqual(stand[0].projectList,[]);
+});
+
+test('Pro Lauf wird die Zahl der Abrufe begrenzt, der Rest folgt später',async()=>{
+ let abrufe=0;
+ const viele=Array.from({length:10},(_,i)=>({...bau('R'+i,['ki','laser']),updatedAt:'2026-01-01',projects:3}));
+ const stand=await enrichProjects(viele,new Map(),async()=>{abrufe++;return [];},4);
+ assert.equal(abrufe,4,'die Grenze muss greifen');
+ // Die uebrigen bleiben unmarkiert und werden im naechsten Lauf nachgeholt.
+ assert.equal(stand.filter(e=>e.detailFor===null).length,6);
+});
+
+test('Ein fehlgeschlagener Detailabruf verwirft den bekannten Stand nicht',async()=>{
+ const v=[mapProject(rohVorhaben)!];
+ const bekannt=new Map([['R1',{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',projectList:v,detailFor:'2026-01-01'}]]);
+ const stand=await enrichProjects([{...bau('R1',['ki','laser']),updatedAt:'2026-06-01',projects:2}],bekannt,
+  async()=>{throw new Error('Register offline');});
+ assert.equal(stand[0].projectList?.length,1,'der letzte gute Stand bleibt');
+});

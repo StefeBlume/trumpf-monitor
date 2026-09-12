@@ -128,16 +128,21 @@ test('Aufbewahrung entfernt Altes, verschont Archiviertes und Frisches',async()=
  const before=await dashboard();
  assert.equal(before.items.length,2);
  const {db}=await import('../src/server/db');const c=await db();
- // Ein Dokument kuenstlich altern lassen, ein zweites zusaetzlich archivieren.
+ // Massstab ist das Datum des Dokuments, nicht der letzte Abruf: ein gestern wiedergesehenes
+ // Papier von vor einem Jahr bleibt sonst liegen.
  const alt=before.items.find(i=>i.externalId==='alt')!;
  const lange=new Date(Date.now()-400*86400000).toISOString();
- await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...alt,lastSeen:lange}),alt.id]});
+ await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...alt,updatedAt:lange,lastSeen:new Date().toISOString()}),alt.id]});
  assert.equal(await prune(180),1,'nur das alte Dokument faellt weg');
  assert.deepEqual((await dashboard()).items.map(i=>i.externalId),['frisch']);
  const frisch=(await dashboard()).items[0];
- await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...frisch,lastSeen:lange,archived:true}),frisch.id]});
+ await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...frisch,updatedAt:lange,archived:true}),frisch.id]});
  assert.equal(await prune(180),0,'Archiviertes bleibt erhalten');
  assert.equal((await dashboard()).items.length,1);
+ // Kuenftige Termine liegen jenseits der Frist und duerfen nie entfernt werden.
+ const morgen=new Date(Date.now()+30*86400000).toISOString();
+ await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...frisch,updatedAt:morgen,archived:false}),frisch.id]});
+ assert.equal(await prune(10),0,'ein Termin in der Zukunft bleibt');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
 // --- Teilausfall wird sichtbar -----------------------------------------------------------------
@@ -181,4 +186,40 @@ test('Unvollstaendige DIP-Antworten fuehren nicht zu halben Eintraegen',()=>{
  assert.equal(ok.updatedAt,null);
  assert.equal(ok.pdfUrl,null);
  assert.equal(ok.url,'https://dip.bundestag.de/vorgangsposition/1');
+});
+
+import {parseMinistryDrafts,bmfLabel} from '../src/server/connectors';
+
+// Aus der echten Sitemap des BMF gekürzt.
+const sitemap=`<?xml version="1.0"?><urlset>
+<url><loc>https://www.bundesfinanzministerium.de/Content/DE/Gesetzestexte/Gesetze_Gesetzesvorhaben/Abteilungen/Abteilung_IV/21_Legislaturperiode/2026-08-18-EStReformG-2027/0-Gesetz.html</loc><lastmod>2026-09-02</lastmod></url>
+<url><loc>https://www.bundesfinanzministerium.de/Content/DE/Gesetzestexte/Gesetze_Gesetzesvorhaben/Abteilungen/Abteilung_V/21_Legislaturperiode/2026-08-28-FAG-Aenderung/0-Gesetz.html</loc><lastmod>2026-09-02</lastmod></url>
+<url><loc>https://www.bundesfinanzministerium.de/Web/DE/Presse/pressemitteilung.html</loc><lastmod>2026-09-11</lastmod></url>
+<url><loc>https://attacker.example/Gesetze_Gesetzesvorhaben/Abteilungen/X/21_Legislaturperiode/2026-01-01-Boese/0-Gesetz.html</loc><lastmod>2026-09-01</lastmod></url>
+</urlset>`;
+
+test('Aus der BMF-Sitemap werden nur amtliche Gesetzesvorhaben übernommen',()=>{
+ const d=parseMinistryDrafts(sitemap);
+ assert.equal(d.length,2,'Pressemitteilung und fremde Domain fallen weg');
+ const est=d.find(x=>x.title.includes('EStReformG'))!;
+ assert.equal(est.documentType,'Referentenentwurf');
+ assert.deepEqual(est.ministries,['bmf']);
+ // Zwei Daten: wann entworfen (aus der Adresse) und wann zuletzt geändert (aus der Sitemap).
+ assert.equal(est.publishedAt?.slice(0,10),'2026-08-18');
+ assert.equal(est.updatedAt?.slice(0,10),'2026-09-02');
+ assert.ok(est.url.startsWith('https://www.bundesfinanzministerium.de/'));
+ assert.equal(d.filter(x=>x.url.includes('attacker')).length,0);
+});
+
+test('Das Kürzel wird lesbar gemacht, ohne einen Titel zu erfinden',()=>{
+ assert.equal(bmfLabel('2026-08-28-FAG-Aenderung'),'FAG Änderung');
+ assert.equal(bmfLabel('2026-08-07-G-Kassenpflicht'),'Kassenpflicht');
+ assert.equal(bmfLabel('2026-05-19-JStG2026'),'JStG2026');
+});
+
+test('Eine Sitemap ohne Gesetzesvorhaben gilt als Formatbruch',()=>{
+ assert.deepEqual(parseMinistryDrafts('<urlset></urlset>'),[]);
+ // Dieselbe Adresse aus mehreren Unterseiten wird nur einmal geführt.
+ const doppelt=parseMinistryDrafts(sitemap+sitemap);
+ assert.equal(doppelt.length,2);
 });
