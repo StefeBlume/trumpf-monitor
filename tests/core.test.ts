@@ -161,7 +161,7 @@ test('Jeder Lauf wird dokumentiert, Leerläufe ersetzen einander statt sich zu h
  // Der Kopf des Lagebilds muss den juengsten Lauf zeigen, nicht die letzte Meldung.
  assert.equal(ruhig[0].items.length,0);
  assert.match(ruhig[0].summary,/Keine neuen oder geänderten Dokumente/);
- await runMonitor({sources:[source],fetcher:async()=>[{...doc,externalId:'2',title:'Neue Vorlage'}]});
+ await runMonitor({sources:[source],fetcher:async()=>[{...doc,externalId:'2',documentNumber:'21/4321',title:'Neue Vorlage'}]});
  const nach=(await dashboard()).briefings;
  assert.equal(nach.length,3,'eine Änderung wird zusätzlich dokumentiert');
  assert.equal(nach[0].items.length,1,'der neueste Eintrag ist der Änderungslauf');
@@ -330,4 +330,28 @@ test('Stände aus einer früheren Fassung lassen den Lauf nicht abbrechen',async
  const lauf=await runMonitor({sources:[{id:'dip-committees',name:'T',institution:'Bundestag',
   url:'https://www.bundestag.de/',kind:'committee-dip',note:'Fixture'}],fetcher:async()=>[]});
  assert.ok(lauf,'der Lauf muss durchlaufen');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Die nachtraegliche Entfernung von Dubletten erzeugte einen Kreislauf: der geloeschte Eintrag wurde
+// von seiner Quelle beim naechsten Lauf erneut geliefert, galt als neu und wurde wieder geloescht.
+// Live fuellten dadurch 28 Briefings dieselben 22 Dokumente.
+test('Zusammengeführte Dubletten tauchen nicht bei jedem Lauf erneut als neu auf',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-kreis-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const a:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ const b:Source={id:'dip-drucksachen',name:'B',institution:'Bundestag',url:doc.url,kind:'fulltext-dip',note:'Fixture'};
+ // Beide Quellen liefern bei jedem Lauf unveraendert dasselbe Papier.
+ const liefern=async(s:Source)=>s.id==='dip-committees'
+  ? [{...doc,externalId:'pos',documentNumber:'21/555',committees:['we'],lead:'we',topics:[]}]
+  : [{...doc,externalId:'drs',documentNumber:'21/555',committees:[],lead:null,ministries:['bmwe'],topics:[]}];
+ try{
+ const erst=await runMonitor({sources:[a,b],fetcher:liefern});
+ assert.equal(erst?.items.length,1,'das Papier zaehlt einmal');
+ for(let i=0;i<4;i++){
+  const lauf=await runMonitor({sources:[a,b],fetcher:liefern});
+  assert.equal(lauf?.items.length,0,`Lauf ${i+2} darf nichts als neu melden`);
+ }
+ const items=(await dashboard()).items;
+ assert.equal(items.length,1,'und es bleibt bei einem Eintrag');
+ assert.deepEqual(items[0].committees,['we']);
+ assert.deepEqual(items[0].ministries,['bmwe'],'die Angaben der zweiten Quelle sind eingearbeitet');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});

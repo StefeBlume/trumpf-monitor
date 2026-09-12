@@ -14,7 +14,7 @@ export function asItem(raw:unknown):Item{
   archived:i.archived===true};
 }
 export function berlinClock(date=new Date()){const parts=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(date);const get=(t:string)=>parts.find(p=>p.type===t)!.value;return {day:`${get('year')}-${get('month')}-${get('day')}`,hour:Number(get('hour'))};}
-export async function dashboard():Promise<Dashboard>{const c=await db();const [items,states,briefings,events,lobby]=await Promise.all([c.execute('SELECT data FROM items'),c.execute('SELECT id,data FROM source_state'),c.execute('SELECT data FROM briefings ORDER BY rowid DESC LIMIT 60'),c.execute('SELECT data FROM events ORDER BY rowid DESC LIMIT 300'),c.execute('SELECT data FROM lobby')]);const state=new Map(states.rows.map(s=>[s.id,JSON.parse(String(s.data))]));return {items:items.rows.map(r=>asItem(JSON.parse(String(r.data)))),sources:configuredSources().map(s=>({...s,...state.get(s.id),status:state.get(s.id)?.status??(s.kind==='manual'?'manual':s.env&&!process.env[s.env]&&s.kind!=='rss'?'setup':'pending')})),briefings:briefings.rows.map(r=>JSON.parse(String(r.data))).sort((a:Briefing,b:Briefing)=>b.createdAt.localeCompare(a.createdAt)),events:events.rows.map(r=>JSON.parse(String(r.data))).sort((a:Event,b:Event)=>b.at.localeCompare(a.at)),lobby:lobby.rows.map(r=>JSON.parse(String(r.data))),serverTime:new Date().toISOString(),scheduleEnabled:process.env.SCHEDULE_ENABLED==='true'};}
+export async function dashboard():Promise<Dashboard>{const c=await db();const [items,states,briefings,events,lobby]=await Promise.all([c.execute('SELECT data FROM items'),c.execute('SELECT id,data FROM source_state'),c.execute('SELECT data FROM briefings ORDER BY rowid DESC LIMIT 30'),c.execute('SELECT data FROM events ORDER BY rowid DESC LIMIT 300'),c.execute('SELECT data FROM lobby')]);const state=new Map(states.rows.map(s=>[s.id,JSON.parse(String(s.data))]));return {items:items.rows.map(r=>asItem(JSON.parse(String(r.data)))),sources:configuredSources().map(s=>({...s,...state.get(s.id),status:state.get(s.id)?.status??(s.kind==='manual'?'manual':s.env&&!process.env[s.env]&&s.kind!=='rss'?'setup':'pending')})),briefings:briefings.rows.map(r=>JSON.parse(String(r.data))).sort((a:Briefing,b:Briefing)=>b.createdAt.localeCompare(a.createdAt)),events:events.rows.map(r=>JSON.parse(String(r.data))).sort((a:Event,b:Event)=>b.at.localeCompare(a.at)),lobby:lobby.rows.map(r=>JSON.parse(String(r.data))),serverTime:new Date().toISOString(),scheduleEnabled:process.env.SCHEDULE_ENABLED==='true'};}
 export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed:number,manual:number):string{
  if(!ok)return 'Keine belastbare Aussage: Es konnte keine Quelle erfolgreich geprüft werden.';
  const changes=updated.filter(i=>i.change!=='baseline');
@@ -38,15 +38,22 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const zuAlt=retention>0?new Date(Date.now()-retention*86400000).toISOString():null;
  const veraltet=(d:DocumentInput)=>!!zuAlt&&!!(d.updatedAt??d.publishedAt)&&(d.updatedAt??d.publishedAt)!<zuAlt;
  const all=options.sources??configuredSources();const initial=await dashboard();const existing=new Map(initial.items.map(i=>[i.id,i]));const states=new Map(initial.sources.map(s=>[s.id,s]));
+ // Dieselbe Drucksache erreicht die App aus zwei Richtungen. Zusammengefuehrt wird beim Eingang,
+ // nicht nachtraeglich durch Loeschen: ein geloeschter Eintrag wird von seiner Quelle beim naechsten
+ // Lauf erneut geliefert, gilt als neu, wird wieder geloescht - ein Kreislauf, der das Briefing
+ // dauerhaft mit denselben Dokumenten fuellte.
+ const jeDrucksache=new Map<string,Item>();
+ for(const i of initial.items)if(i.documentNumber&&!i.archived)jeDrucksache.set(i.documentNumber,i);
  const updated:Item[]=[];let ok=0,failed=0,manual=0;const errors:string[]=[];
  for(const source of all){
  // Das Lobbyregister liefert Akteure statt Dokumente und laeuft deshalb an der Dokumentpruefung vorbei.
  if(source.kind==='lobby'){
  const now=new Date().toISOString();
  try{
- const n=options.lobby===false?0:await refreshLobby(options.lobbyFetcher);
- await c.execute({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:'ok',checkedAt:now,count:n,error:null})]});
- ok++;
+ let hinweis:string|null=null;
+ const n=options.lobby===false?0:await refreshLobby(options.lobbyFetcher,(h:string)=>{hinweis=h;});
+ await c.execute({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:hinweis?'partial':'ok',checkedAt:now,count:n,error:hinweis})]});
+ ok++;if(hinweis)errors.push(`${source.institution}: ${hinweis}`);
  }catch(e){failed++;const error=e instanceof Error?e.message:'Abruf fehlgeschlagen';errors.push(`${source.institution}: ${error}`);
  await c.execute({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:'error',checkedAt:states.get(source.id)?.checkedAt??null,count:states.get(source.id)?.count??0,error})]});}
  continue;
@@ -62,9 +69,23 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  for(const doc of new Map(docs.map(d=>[d.externalId,d])).values()){
  if(veraltet(doc))continue;
  const itemId=createHash('sha256').update(source.id+'|'+doc.externalId).digest('hex').slice(0,24);
+ const zwilling=doc.documentNumber?jeDrucksache.get(doc.documentNumber):undefined;
+ if(zwilling&&zwilling.id!==itemId){
+ // In den fuehrenden Eintrag einarbeiten, statt einen zweiten anzulegen.
+ const themen=[...zwilling.topics];
+ for(const t of doc.topics)if(!themen.some(x=>x.topic===t.topic))themen.push(t);
+ const gremien=[...new Set([...zwilling.committees,...doc.committees])];
+ const ressorts=[...new Set([...zwilling.ministries,...doc.ministries])];
+ if(themen.length!==zwilling.topics.length||gremien.length!==zwilling.committees.length||ressorts.length!==zwilling.ministries.length){
+ Object.assign(zwilling,{topics:themen,committees:gremien,ministries:ressorts,lead:zwilling.lead??doc.lead});
+ statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify(zwilling),zwilling.id]});
+ }
+ continue;
+ }
  const old=existing.get(itemId),hash=contentHash(doc);
  const change=old?(hash===old.hash?'unchanged':'changed'):(baseline?'baseline':'new');
  const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(hash!==old.hash?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false};
+ if(item.documentNumber)jeDrucksache.set(item.documentNumber,item);
  statements.push({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[itemId,source.id,JSON.stringify(item)]});
  if(change!=='unchanged'){
  const event:Event={id:randomUUID(),itemId,title:item.title,at:now,change,sourceId:source.id,version:item.version};
@@ -83,7 +104,7 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  if(retention>0&&ok)await prune(retention);
  // Das Briefing traegt die Dokumente mit; bei einem Erstimport waren das 184 KB fuer einen einzigen
  // Eintrag. Fuer die Anzeige reichen die ersten 60 - die Gesamtzahl steht in der Zusammenfassung.
- const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated.slice(0,60),coverage:{ok,failed,manual},errors};
+ const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated.slice(0,40),coverage:{ok,failed,manual},errors};
  // Jeder Lauf wird dokumentiert, sonst zeigt das Lagebild die Meldung eines aelteren Laufs neben
  // dem Zeitstempel des juengsten - genau dieser Widerspruch war in der Oberflaeche sichtbar.
  // Damit die Liste nicht zulaeuft, ersetzt ein Lauf ohne Aenderung den vorherigen Leerlauf des Tages.
@@ -121,6 +142,8 @@ export async function seedFromSnapshot(snapshot:{items?:Item[];events?:Event[];b
 // Archiviertes bleibt, weil es bewusst aufgehoben wurde.
 export async function prune(days:number):Promise<number>{
  const c=await db();
+ // Briefings sammeln sich sonst unbegrenzt an. Ausgeliefert werden ohnehin nur die letzten 30.
+ await c.execute('DELETE FROM briefings WHERE rowid NOT IN (SELECT rowid FROM briefings ORDER BY rowid DESC LIMIT 60)');
  const cutoff=new Date(Date.now()-days*86400000).toISOString();
  const stale=await c.execute({sql:`SELECT id FROM items WHERE json_extract(data,'$.archived')=0
   AND COALESCE(json_extract(data,'$.updatedAt'),json_extract(data,'$.publishedAt'),json_extract(data,'$.firstSeen'))<?`,args:[cutoff]});
@@ -137,8 +160,8 @@ export async function prune(days:number):Promise<number>{
 
 // Das Lobbyregister beschreibt Akteure, nicht Dokumente. Es laeuft deshalb neben der Dokumentpruefung
 // und wird bei jedem erfolgreichen Lauf vollstaendig ersetzt; der Registerstand ist die Wahrheit.
-export async function refreshLobby(fetcher:()=>Promise<LobbyEntry[]>=lobbyEntries):Promise<number>{
- const entries=await fetcher();
+export async function refreshLobby(fetcher:(warn?:(n:string)=>void)=>Promise<LobbyEntry[]>=lobbyEntries,warn?:(n:string)=>void):Promise<number>{
+ const entries=await fetcher(warn);
  if(!entries.length)throw new Error('Lobbyregister lieferte keine Einträge');
  const c=await db();
  // Bereits geholte Vorhaben uebernehmen, statt sie bei jedem Lauf neu zu laden.

@@ -193,3 +193,19 @@ test('Gespeicherte Stände aus einer früheren Fassung werden beim Wiederverwend
  assert.equal(abrufe,0,'ein unveränderter Eintrag wird nicht neu abgerufen');
  assert.deepEqual(stand[0].projectList?.map(v=>v.number),['RV0012620'],'das themenlose Vorhaben fällt weg');
 });
+
+test('Ausgefallene Themenabfragen erscheinen im Quellenstatus',async()=>{
+ // Faellt eine Abfrage aus, beruehren Eintraege weniger Themen und fallen unter die Schwelle.
+ // Ohne Hinweis sieht das aus wie ein geschrumpftes Register - live von 95 auf 29 Akteure.
+ const dir=mkdtempSync(join(tmpdir(),'policy-lobbywarn-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ try{
+ const lauf=await runMonitor({sources:[{id:'lobbyregister',name:'L',institution:'Lobbyregister',
+  url:'https://www.lobbyregister.bundestag.de/',kind:'lobby',note:'Fixture'}],
+  lobbyFetcher:async(warn?:(n:string)=>void)=>{warn?.('3 von 9 Themenabfragen fehlgeschlagen: Halbleiter; Laser; KI');return [bau('R1',['ki','laser'])];}});
+ const q=(await dashboard()).sources.find(s=>s.id==='lobbyregister')!;
+ assert.equal(q.status,'partial');
+ assert.match(q.error!,/3 von 9 Themenabfragen/);
+ assert.equal(lauf?.coverage.failed,0,'ein Teilausfall ist kein Totalausfall');
+ assert.ok(lauf!.errors.some(e=>/Themenabfragen/.test(e)),'das Briefing muss ihn nennen');
+ assert.equal((await dashboard()).lobby.length,1,'die erreichbaren Einträge bleiben');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});

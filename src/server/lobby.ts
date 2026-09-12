@@ -82,7 +82,7 @@ export function relevantEntries(entries:LobbyEntry[],minTopics=MIN_TOPICS):Lobby
  return entries.filter(e=>e.own||e.topics.length>=minTopics)
   .sort((a,b)=>Number(b.own)-Number(a.own)||b.topics.length-a.topics.length||b.projects-a.projects||a.name.localeCompare(b.name,'de'));
 }
-export async function lobbyEntries():Promise<LobbyEntry[]>{
+export async function lobbyEntries(warn?:(n:string)=>void):Promise<LobbyEntry[]>{
  const found:LobbyEntry[]=[]; const failed:string[]=[];
  for(const t of TOPICS){
   const q=LOBBY_QUERIES[t.id]; if(!q)continue;
@@ -94,6 +94,9 @@ export async function lobbyEntries():Promise<LobbyEntry[]>{
   }catch(e){failed.push(`${t.label}: ${e instanceof Error?e.message:'Abruf fehlgeschlagen'}`);}
  }
  if(failed.length>TOPICS.length/2)throw new Error(`Lobbyregister überwiegend nicht erreichbar (${failed.slice(0,2).join('; ')})`);
+ // Faellt eine Themenabfrage aus, beruehren Eintraege weniger Themen und fallen unter die Schwelle.
+ // Ohne Hinweis saehe das aus wie ein plötzlich geschrumpftes Register - live von 95 auf 29.
+ if(failed.length)warn?.(`${failed.length} von ${TOPICS.length} Themenabfragen fehlgeschlagen: ${failed.join('; ')}`);
  return relevantEntries(mergeEntries(found));
 }
 
