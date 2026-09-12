@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {TOPICS,scanTopics,topicRank,topicById} from '../src/server/topics';
+import {TOPICS,scanTopics,topicById} from '../src/server/topics';
 
 test('Themenraster bleibt in sich stimmig',()=>{
  const ids=TOPICS.map(t=>t.id);
@@ -76,15 +76,15 @@ test('Fundstellen werden gezählt und der Titel gesondert vermerkt',()=>{
  assert.equal(nurText.count,1);
 });
 
-test('Reihenfolge stellt Titeltreffer und Themenbreite voran',()=>{
- const stark=scanTopics('Halbleiterstrategie','Halbleiter, Lasertechnik und Ausfuhrkontrolle über viele Seiten. Halbleiter erneut.');
- const schwach=scanTopics('Bericht zur Schweinehaltung','Die Lieferkette der Betriebe ist betroffen.');
- assert.ok(topicRank(stark)>topicRank(schwach));
- assert.equal(topicRank([]),0);
- // Ein Titeltreffer wiegt schwerer als viele Fundstellen tief im Text.
- const titel=scanTopics('Lasertechnik im Mittelstand','');
- const tief=scanTopics('Allgemeiner Bericht','laserschneiden '.repeat(30));
- assert.ok(topicRank(titel)>topicRank(tief));
+// Die Liste ordnet nach dem Datum der Quelle. Innerhalb eines Tages entscheidet der Zeitstempel,
+// den das DIP sekundengenau liefert - eine zusaetzliche Gewichtung gaebe es nicht her und waere
+// auch keine Tatsache mehr, sondern ein Urteil.
+test('Fundstellen werden nach Themen gruppiert, nicht gewichtet',()=>{
+ const m=scanTopics('Halbleiter und Lasertechnik','Halbleiter mehrfach. Halbleiter erneut. Laser einmal.');
+ assert.deepEqual(m.map(x=>x.topic).sort(),['halbleiter','laser']);
+ // Innerhalb des Ergebnisses stehen Titeltreffer vorn, damit der Beleg oben passt.
+ assert.equal(m[0].inTitle,true);
+ assert.ok(m.every(x=>x.count>0));
 });
 
 test('Beleg nennt Begriff und Zusammenhang, nicht nur ein Etikett',()=>{

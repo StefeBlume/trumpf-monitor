@@ -3,16 +3,21 @@ import {parseFeed,parseCommitteeEvents,parseAgendaTable,officialURL,clean} from 
 import {scanTopics} from './topics';
 export function configuredSources():Source[]{return SOURCES.map(s=>({...s,...(s.kind==='rss'&&s.env&&process.env[s.env]?{feed:process.env[s.env]}:{})}));}
 export class PermanentSourceError extends Error {}
+// Das Zeitlimit umfasst auch das Lesen des Rumpfes. Bei festen 10 Sekunden bricht eine 26-MB-Antwort
+// der Volltextsuche auf einer langsamen Leitung ab, deshalb waechst es mit der erlaubten Groesse -
+// gedeckelt, damit ein haengender Server den Lauf nicht blockiert.
+export const fetchTimeoutFor=(maxBytes:number)=>Math.min(90_000,Math.max(10_000,Math.round(maxBytes/1_000_000)*2_000));
 // Standardgrenze 4 MB. Die Volltextsuche braucht mehr: eine einzelne Seite kann ein
 // Haushaltsgesetz im Volltext enthalten.
 export const FULLTEXT_LIMIT=32*1024*1024;
 export async function fetchOfficial(url:string,headers:Record<string,string>={},maxBytes=4_000_000):Promise<string>{
  if(!officialURL(url))throw new PermanentSourceError('Nur freigegebene amtliche HTTPS-Domains erlaubt');
+ const timeout=fetchTimeoutFor(maxBytes);
  for(let attempt=0;attempt<3;attempt++){
  try{
  let next=url;
  for(let hop=0;hop<4;hop++){
- const r=await fetch(next,{redirect:'manual',headers:{'User-Agent':'PolicyMonitor/1.0 (public-source monitoring)',...headers},signal:AbortSignal.timeout(10000)});
+ const r=await fetch(next,{redirect:'manual',headers:{'User-Agent':'PolicyMonitor/1.0 (public-source monitoring)',...headers},signal:AbortSignal.timeout(timeout)});
  if([301,302,303,307,308].includes(r.status)){
  const loc=r.headers.get('location'); if(!loc)throw new PermanentSourceError('Leere Weiterleitung');
  const target=new URL(loc,next).href;

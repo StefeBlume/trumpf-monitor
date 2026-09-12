@@ -3,7 +3,7 @@ import {useEffect,useRef,useState} from 'react';
 import {Radar,LayoutDashboard,FileText,Radio,Settings,Search,ArrowUpRight,RefreshCw,ChevronRight,Clock,ShieldCheck,AlertCircle,ArrowLeft,Download,Archive,History,Check,SlidersHorizontal,X,Landmark,FileDown,Building2,Target,Quote,CalendarDays,Users,Euro} from 'lucide-react';
 import {COMMITTEES,MINISTRIES,SOURCES,committeeById,type Dashboard,type Item,type Briefing,type Change} from '../src/model';
 import {TOPICS,topicById,type TopicMatch} from '../src/server/topics';
-import type {LobbyProject} from '../src/server/lobby';
+import {withTopics,type LobbyProject} from '../src/server/lobby';
 const HOSTED=process.env.NEXT_PUBLIC_HOSTED==='1';
 // Statischer Betrieb auf GitHub Pages: kein Server, kein Schlüssel. Die Seite liest den Stand,
 // den der tägliche Lauf in bootstrap.json geschrieben hat. Alles, was einen Server braucht, entfällt.
@@ -18,7 +18,9 @@ const date=(s:string|null|undefined,full=false)=>s?new Intl.DateTimeFormat('de-D
 // Reihenfolge waere praktisch zufaellig. Ohne Quellendatum zaehlt der Erstkontakt, nicht "jetzt",
 // sonst stehen datumslose Meldungen dauerhaft oben.
 const recency=(i:Item)=>i.updatedAt??i.publishedAt??i.firstSeen;
-const today=()=>new Date().toISOString().slice(0,10);
+// "ab heute" richtet sich nach Berliner Datum. Mit UTC gaelte zwischen Mitternacht und zwei Uhr
+// morgens noch der Vortag, und ein Termin von gestern stuende weiter unter "Als Nächstes".
+const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Berlin'}).format(new Date());
 const isUpcoming=(i:Item)=>!!i.publishedAt&&i.publishedAt.slice(0,10)>=today()&&(i.documentType==='Ausschusstermin'||i.documentType==='Tagesordnung');
 // Altbestand aus einem Stand vor der Themensuche traegt das Feld noch nicht.
 const topicsOf=(i:Item):TopicMatch[]=>i.topics??[];
@@ -51,10 +53,14 @@ export default function Home(){
  useEffect(()=>{if(selected){setTab('detail');setVersions(null);mainRef.current?.scrollTo(0,0);} },[selected?.id]);
  useEffect(()=>{if(!ready)return;const onVisible=()=>{if(document.visibilityState==='visible'&&(HOSTED||conn.token))void refresh();};document.addEventListener('visibilitychange',onVisible);return()=>document.removeEventListener('visibilitychange',onVisible);},[ready,conn.url,conn.token]);
  const latest=data.briefings[0];
- // Bei stuendlichen Laeufen wird nicht jedes Mal ein Briefing gespeichert. Der ehrliche Zeitpunkt
- // des letzten Abrufs steht deshalb im Quellenstatus, nicht im Briefing.
+ // Der Zeitpunkt des letzten Quellenabrufs steht im Quellenstatus. Er ist der ehrlichere Wert als
+ // der Zeitstempel des Briefings, weil er auch dann stimmt, wenn ein Lauf nichts gefunden hat.
  const lastCheck=data.sources.map(s=>s.checkedAt).filter(Boolean).sort().at(-1);
- const lobby=(data.lobby??[]).filter(e=>!topic||e.topics.includes(topic));
+ // Sortiert nach eigenem Eintrag, Themenbreite und der Zahl der Vorhaben MIT Themenbezug - die
+ // gemeldete Gesamtzahl sagt wenig: ein Verband mit 200 Vorhaben kann keines zu deinen Themen führen.
+ const trefferVorhaben=(e:{projectList?:LobbyProject[]})=>withTopics(e.projectList??[]).filter(v=>!topic||v.topics.includes(topic)).length;
+ const lobby=(data.lobby??[]).filter(e=>!topic||e.topics.includes(topic))
+  .sort((a,b)=>Number(b.own)-Number(a.own)||trefferVorhaben(b)-trefferVorhaben(a)||b.topics.length-a.topics.length||a.name.localeCompare(b.name,'de'));
  // Das Register meldet Spannen in Zehntausenderschritten. Ohne Nachkommastellen fallen Unter- und
  // Obergrenze in der kompakten Schreibweise zusammen ("6 Mio.–6 Mio.").
  const geld=(e:{spendFrom:number|null;spendTo:number|null})=>{
@@ -139,7 +145,7 @@ export default function Home(){
    {geld(e)&&<span><Euro size={14}/>{geld(e)}{e.fiscalYear?` (${e.fiscalYear})`:''}</span>}
    {e.updatedAt&&<span><Clock size={14}/>Stand {date(e.updatedAt)}</span>}
   </div>
-  {(() => {const vs=(e.projectList??[]).filter((v:LobbyProject)=>v.topics.length&&(!topic||v.topics.includes(topic)));
+  {(() => {const vs=withTopics(e.projectList??[]).filter((v:LobbyProject)=>!topic||v.topics.includes(topic));
    if(!vs.length)return e.projects>0?<p className="lobby-felder">{e.projects} Vorhaben gemeldet, keines davon zu deinen Themen.</p>:null;
    return <div className="vorhaben"><span className="vorhaben-kopf">Arbeitet an diesen Vorhaben zu deinen Themen</span>
     {vs.slice(0,4).map((v:LobbyProject)=><div className="vorhaben-zeile" key={v.number}><strong>{v.title}</strong>

@@ -223,3 +223,15 @@ test('Eine Sitemap ohne Gesetzesvorhaben gilt als Formatbruch',()=>{
  const doppelt=parseMinistryDrafts(sitemap+sitemap);
  assert.equal(doppelt.length,2);
 });
+
+import {fetchTimeoutFor} from '../src/server/connectors';
+
+test('Das Zeitlimit wächst mit der erlaubten Antwortgröße',()=>{
+ // Bei festen 10 Sekunden bricht eine 26-MB-Antwort der Volltextsuche auf langsamer Leitung ab.
+ assert.equal(fetchTimeoutFor(4_000_000),10_000);
+ assert.equal(fetchTimeoutFor(24*1024*1024),50_000);
+ assert.equal(fetchTimeoutFor(32*1024*1024),68_000);
+ // Nach oben gedeckelt, damit ein haengender Server den Lauf nicht blockiert.
+ assert.equal(fetchTimeoutFor(500*1024*1024),90_000);
+ assert.equal(fetchTimeoutFor(1),10_000);
+});

@@ -19,6 +19,13 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const lock=await c.execute({sql:'INSERT INTO locks(id,owner,expires) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,expires=excluded.expires WHERE locks.expires < ?',args:['monitor',id,Date.now()+600000,Date.now()]});
  if(!lock.rowsAffected)throw new Error('Ein Quellenlauf ist bereits aktiv.');
  try{
+ const retention=options.retentionDays??Number(process.env.RETENTION_DAYS??10);
+ // Dieselbe Grenze wie bei der Aufbewahrung, aber schon beim Eingang. Ohne sie entsteht ein
+ // Kreislauf: Terminlisten liefern bei jedem Lauf dieselben alten Sitzungen, die Aufbewahrung
+ // loescht sie, der naechste Lauf meldet sie erneut als "neu". Das Briefing zeigte dadurch
+ // dauerhaft dreistellige Zahlen, obwohl sich nichts bewegt hatte.
+ const zuAlt=retention>0?new Date(Date.now()-retention*86400000).toISOString():null;
+ const veraltet=(d:DocumentInput)=>!!zuAlt&&!!(d.updatedAt??d.publishedAt)&&(d.updatedAt??d.publishedAt)!<zuAlt;
  const all=options.sources??configuredSources();const initial=await dashboard();const existing=new Map(initial.items.map(i=>[i.id,i]));const states=new Map(initial.sources.map(s=>[s.id,s]));
  const updated:Item[]=[];let ok=0,failed=0,manual=0;const errors:string[]=[];
  // Dieselbe Drucksache kommt aus zwei Richtungen: als Ausschussueberweisung (mit Gremien, aber nur
@@ -47,6 +54,7 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const baseline=!states.get(source.id)?.checkedAt&&!initial.items.some(i=>i.sourceId===source.id);
  const statements:any[]=[];const sourceUpdates:Item[]=[];
  for(const doc of new Map(docs.map(d=>[d.externalId,d])).values()){
+ if(veraltet(doc))continue;
  const itemId=createHash('sha256').update(source.id+'|'+doc.externalId).digest('hex').slice(0,24);
  const zwilling=doc.documentNumber?jeDrucksache.get(doc.documentNumber):undefined;
  if(zwilling){
@@ -57,7 +65,10 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  Object.assign(zwilling,{topics:themen,ministries:ressorts});
  statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify(zwilling),zwilling.id]});
  }
- statements.push({sql:'DELETE FROM items WHERE id=?',args:[itemId]});
+ // Auch Versionen und Ereignisse der Dublette entfernen, sonst bleiben sie verwaist zurueck.
+ statements.push({sql:'DELETE FROM versions WHERE item_id=?',args:[itemId]},
+  {sql:"DELETE FROM events WHERE json_extract(data,'$.itemId')=?",args:[itemId]},
+  {sql:'DELETE FROM items WHERE id=?',args:[itemId]});
  continue;
  }
  const old=existing.get(itemId),hash=contentHash(doc);
@@ -78,7 +89,6 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  // Renew owner-specific lease between sources.
  await c.execute({sql:'UPDATE locks SET expires=? WHERE id=? AND owner=?',args:[Date.now()+600000,'monitor',id]});
  }
- const retention=options.retentionDays??Number(process.env.RETENTION_DAYS??10);
  if(retention>0&&ok)await prune(retention);
  const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated,coverage:{ok,failed,manual},errors};
  // Jeder Lauf wird dokumentiert, sonst zeigt das Lagebild die Meldung eines aelteren Laufs neben

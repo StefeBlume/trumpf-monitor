@@ -54,6 +54,8 @@ Abgerufen wird inkrementell über `f.aktualisiert.start`: ab dem letzten erfolgr
 
 **Formatbrüche.** Terminlisten melden einen Fehler, wenn ein Ausschuss gar keine Einträge im erwarteten Format liefert; brechen mehr als die Hälfte, scheitert die Quelle ganz. Die Tagesordnungstabelle meldet einen Fehler, wenn Zeilen vorhanden sind, aber keine Verweise enthalten. Eine leere Liste in sitzungsfreien Wochen ist dagegen gültig. Diese Prüfungen gibt es, weil der Tagesordnungs-Parser nach einem Spaltenwechsel schon einmal still auf null lief.
 
+**Eingangsfilter.** Dieselbe Grenze greift schon beim Eingang: was älter ist, wird gar nicht erst angelegt. Ohne sie entsteht ein Kreislauf, weil Terminlisten bei jedem Lauf dieselben alten Sitzungen liefern — die App legt sie an, die Aufbewahrung löscht sie, der nächste Lauf meldet sie erneut als „neu". Das Briefing zeigte dadurch dauerhaft dreistellige Zahlen, obwohl sich nichts bewegt hatte.
+
 **Aufbewahrung.** `RETENTION_DAYS` (Standard 10) entfernt nach jedem erfolgreichen Lauf alles, was älter ist — samt Versionen und Ereignissen. Maßstab ist das Datum des Dokuments selbst (Bewegung laut Quelle, sonst Veröffentlichung, sonst Erstkontakt), nicht der letzte Abruf: sonst blieben monatealte Papiere liegen, nur weil die App sie gestern wiedergesehen hat. Künftige Termine liegen jenseits der Frist und werden nie entfernt. Archiviertes bleibt.
 
 **Zusammenführung.** Dieselbe Drucksache erreicht die App aus zwei Richtungen: als Ausschussüberweisung (mit Gremien, aber nur der Titel durchsucht) und aus der Volltextsuche (mit Themen, aber ohne Gremien). Teilen sich zwei Einträge eine Drucksachennummer, gewinnt die Ausschussquelle und erbt Themen und Ressort der zweiten; die Dublette wird nicht angelegt und ein Rest aus einem früheren Lauf entfernt. So steht jedes Papier genau einmal in der App, mit allen Angaben.
@@ -151,7 +153,7 @@ NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
 npm test
 ```
 
-65 Tests in vier Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+67 Tests in vier Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
 
 `tests/topics.test.ts` deckt die Themensuche ab: Stimmigkeit des Rasters, Erkennung aller TRUMPF-Kernthemen, Abkürzungen nur in Großschreibung, industrieller Kontext für KI und die breiten Standortbegriffe, deutsche Beugung samt Zeilenumbruch, Zählung und Titelvermerk, Reihenfolge und die Belegqualität.
 

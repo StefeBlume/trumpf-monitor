@@ -229,8 +229,41 @@ test('Dieselbe Drucksache aus zwei Quellen wird zu einem Eintrag zusammengeführ
   ? [{...doc,externalId:'pos-1',documentNumber:'21/999',committees:['we'],lead:'we',topics:[]}]
   : [{...doc,externalId:'drs-1',documentNumber:'21/999',committees:[],lead:null,ministries:['bmwe'],topics:[]}]});
  assert.equal((await dashboard()).items.length,1);
+ // Die Dublette darf keine verwaisten Versionen oder Ereignisse hinterlassen.
+ const {db}=await import('../src/server/db');const c=await db();
+ const waisen=await c.execute("SELECT COUNT(*) n FROM versions WHERE item_id NOT IN (SELECT id FROM items)");
+ assert.equal(Number(waisen.rows[0].n),0,'verwaiste Versionen');
+ const waisenE=await c.execute("SELECT COUNT(*) n FROM events WHERE json_extract(data,'$.itemId') NOT IN (SELECT id FROM items)");
+ assert.equal(Number(waisenE.rows[0].n),0,'verwaiste Ereignisse');
  // Verschiedene Drucksachennummern bleiben getrennt.
  await runMonitor({sources:[ausschuss],fetcher:async()=>[
   {...doc,externalId:'a',documentNumber:'21/111'},{...doc,externalId:'b',documentNumber:'21/222'}]});
  assert.equal((await dashboard()).items.length,3);
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Terminlisten liefern bei jedem Lauf dieselben alten Sitzungen. Ohne Eingangsfilter legte die App
+// sie an, die Aufbewahrung loeschte sie, der naechste Lauf meldete sie erneut als "neu" - das
+// Briefing zeigte dauerhaft dreistellige Zahlen, obwohl sich nichts bewegt hatte.
+test('Was aelter als die Aufbewahrungsfrist ist, wird gar nicht erst angelegt',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-churn-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const quelle:Source={id:'bt-events',name:'T',institution:'Bundestag',url:doc.url,kind:'committee-events',note:'Fixture'};
+ const alt=new Date(Date.now()-40*86400000).toISOString();
+ const frisch=new Date(Date.now()-2*86400000).toISOString();
+ const termin=new Date(Date.now()+20*86400000).toISOString();
+ // Eine Terminliste, wie sie die Quelle unveraendert bei jedem Lauf liefert.
+ const liste=async()=>[
+  {...doc,externalId:'alt',documentNumber:null,publishedAt:alt,updatedAt:alt},
+  {...doc,externalId:'frisch',documentNumber:null,publishedAt:frisch,updatedAt:frisch},
+  {...doc,externalId:'termin',documentNumber:null,publishedAt:termin,updatedAt:termin}];
+ try{
+ const erst=await runMonitor({sources:[quelle],fetcher:liste,retentionDays:10});
+ assert.equal(erst?.items.length,2,'die alte Sitzung darf gar nicht erst eingehen');
+ assert.deepEqual((await dashboard()).items.map(i=>i.externalId).sort(),['frisch','termin']);
+ // Und beim naechsten Lauf meldet die App nichts Neues, obwohl die Quelle dasselbe liefert.
+ const zweit=await runMonitor({sources:[quelle],fetcher:liste,retentionDays:10});
+ assert.equal(zweit?.items.length,0,'derselbe Inhalt darf nicht erneut als neu gelten');
+ assert.match(zweit!.summary,/Keine neuen oder geänderten Dokumente/);
+ const dritt=await runMonitor({sources:[quelle],fetcher:liste,retentionDays:10});
+ assert.equal(dritt?.items.length,0);
+ assert.equal((await dashboard()).items.length,2,'der Bestand bleibt stabil');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});

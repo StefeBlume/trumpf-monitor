@@ -103,11 +103,3 @@ export function scanTopics(title:string,body=''):TopicMatch[]{
  return [...byTopic].map(([topic,v])=>({topic,terms:[...v.terms],count:v.count,inTitle:v.inTitle,snippet:v.snippet}))
   .sort((a,b)=>Number(b.inTitle)-Number(a.inTitle)||b.count-a.count);
 }
-// Reihenfolge der Thementreffer: zuerst was im Titel steht, dann was mehrere Themen beruehrt,
-// dann was haeufiger vorkommt. Alles drei sind abzaehlbare Eigenschaften des Textes.
-export function topicRank(matches:TopicMatch[]):number{
- if(!matches.length)return 0;
- const titel=matches.filter(m=>m.inTitle).length;
- const fund=matches.reduce((n,m)=>n+m.count,0);
- return titel*1000+matches.length*100+Math.min(fund,99);
-}

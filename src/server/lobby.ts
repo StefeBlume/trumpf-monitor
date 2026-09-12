@@ -1,8 +1,6 @@
-import {TOPICS} from './topics';
+import {TOPICS,scanTopics} from './topics';
 import {fetchOfficial} from './connectors';
-import {clean} from './parsing';
-import {scanTopics} from './topics';
-import {officialURL} from './parsing';
+import {clean,officialURL} from './parsing';
 // Das Lobbyregister des Bundestags fuehrt, wer sich beruflich fuer welche Interessen einsetzt.
 // Je Thema eine eigene Abfrage; die Begriffe sind enger als im Volltextraster, weil das Register
 // mit Interessenfeldern arbeitet und breite Begriffe wie "Industriepolitik" tausende Eintraege
@@ -104,6 +102,9 @@ export async function fetchProjects(registerNumber:string):Promise<LobbyProject[
  const url=`https://www.lobbyregister.bundestag.de/sucheDetailJson?q=${encodeURIComponent(registerNumber)}`;
  const d=JSON.parse(await fetchOfficial(url,{},24*1024*1024));
  const treffer=(Array.isArray(d.results)?d.results:[]).find((r:any)=>r?.registerNumber===registerNumber);
+ // Findet die Suche den Eintrag nicht, ist das ein Fehler und kein leeres Ergebnis: sonst gilt der
+ // Abruf als erledigt und die Vorhaben fehlen dauerhaft.
+ if(!treffer)throw new Error(`Registereintrag ${registerNumber} in der Detailsuche nicht gefunden`);
  const roh=(treffer?.regulatoryProjects?.regulatoryProjects)??[];
  return (Array.isArray(roh)?roh:[]).map(mapProject).filter((p:LobbyProject|null):p is LobbyProject=>!!p);
 }
