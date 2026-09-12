@@ -53,7 +53,7 @@ export interface DocumentInput {
  originator:string|null;       // Urheber laut Fundstelle
  topics:TopicMatch[];          // Fundstellen der TRUMPF-Themen, mit Beleg
 }
-export interface Item extends DocumentInput {id:string; sourceId:string; institution:string; hash:string; version:number; change:Change; firstSeen:string; lastSeen:string; changedAt:string; archived:boolean;}
+export interface Item extends DocumentInput {id:string; sourceId:string; institution:string; hash:string; version:number; change:Change; firstSeen:string; lastSeen:string; changedAt:string; archived:boolean; quelleStand?:string|null;}
 export interface Event {id:string; itemId:string; title:string; at:string; change:Change; sourceId:string; version:number;}
 export interface Briefing {id:string; createdAt:string; day:string; baseline:boolean; summary:string; gesamt?:number; items:Item[]; coverage:{ok:number; failed:number; manual:number}; errors:string[];}
 export interface Dashboard {items:Item[]; sources:Source[]; briefings:Briefing[]; events:Event[]; lobby:LobbyEntry[]; serverTime:string; scheduleEnabled:boolean;}

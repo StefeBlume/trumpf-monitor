@@ -630,6 +630,41 @@ test('Jede Änderung des Themenrasters holt das Fenster neu',()=>{
  assert.notEqual(erfassungsstand(mit('halbleiter',t=>({...t,terms:[...t.terms,'extra']}))),ERFASSUNGSSTAND,'ein neuer Begriff');
  assert.notEqual(erfassungsstand(mit('dualuse',t=>({...t,ignore:[/anders/gi]}))),ERFASSUNGSSTAND,'eine geänderte Ausnahme');
  assert.notEqual(erfassungsstand(mit('ki',t=>({...t,context:{...t.context,naehe:undefined}}))),ERFASSUNGSSTAND,'eine geänderte Kontextregel');
- assert.notEqual(erfassungsstand(TOPICS,6),ERFASSUNGSSTAND,'eine neue Zuordnungslogik');
+ assert.notEqual(erfassungsstand(TOPICS,7),ERFASSUNGSSTAND,'eine neue Zuordnungslogik');
  assert.equal(erfassungsstand(TOPICS),ERFASSUNGSSTAND,'dasselbe Raster ergibt denselben Stand');
 });
+
+// Die Antwort Drs. 21/7783 war ein Halbleiter-Treffer wegen "Artikel 2 EUV". Nach der Korrektur fand der
+// Scanner kein Thema mehr, die Volltextsuche verwarf das Dokument - und der gespeicherte Eintrag behielt
+// seinen falschen Treffer, weil ihn nichts mehr aktualisierte.
+test('Was eine DIP-Quelle in ihrem Fenster nicht mehr liefert, fällt heraus',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-abgleich-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const volltext:Source={id:'dip-drucksachen',name:'V',institution:'Bundestag',url:doc.url,kind:'fulltext-dip',note:'Fixture'};
+ const ausschuss:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ const vor=(h:number)=>new Date(Date.now()-h*3600000).toISOString();
+ const antwort={...doc,externalId:'290420',documentNumber:'21/7783',paperKey:'BT-Drucksache 21/7783',title:'Antwort',updatedAt:vor(1),publishedAt:vor(1),committees:[],lead:null,
+  topics:[{topic:'halbleiter',terms:['EUV'],count:2,inTitle:false,snippet:'… Artikel 2 EUV …'}]};
+ const alt={...antwort,externalId:'alt',documentNumber:'21/1000',paperKey:'BT-Drucksache 21/1000',title:'Älterer Treffer',updatedAt:vor(5*24),publishedAt:vor(5*24)};
+ try{
+ await runMonitor({sources:[volltext],fetcher:async()=>[antwort,alt],retentionDays:10});
+ assert.equal((await dashboard()).items.length,2);
+ // Nach der Regelaenderung liefert die Quelle nichts mehr.
+ await runMonitor({sources:[volltext],fetcher:async()=>[],retentionDays:10});
+ assert.deepEqual((await dashboard()).items.map(i=>i.title),['Älterer Treffer'],'die Antwort liegt im Fenster und fällt heraus; der ältere Treffer liegt davor und bleibt');
+ const {db}=await import('../src/server/db');const c=await db();
+ const waisen=await c.execute("SELECT COUNT(*) n FROM events WHERE json_extract(data,'$.itemId') NOT IN (SELECT id FROM items)");
+ assert.equal(Number(waisen.rows[0].n),0,'keine verwaisten Ereignisse');
+ // Nach einer Teilwarnung wird nichts entfernt: das Fenster ist dann nicht vollständig.
+ await runMonitor({sources:[volltext],fetcher:async()=>[{...antwort,updatedAt:vor(1)}],retentionDays:10});
+ assert.equal((await dashboard()).items.length,2);
+ await runMonitor({sources:[volltext],fetcher:async(_s,_since,warn)=>{warn?.('3 Seiten nicht lesbar');return [];},retentionDays:10});
+ assert.equal((await dashboard()).items.length,2,'unvollständiger Abruf entfernt nichts');
+ // Ein zusammengefuehrtes Papier bleibt, wenn die andere Quelle es liefert.
+ await c.execute('DELETE FROM items');
+ const position={...doc,externalId:'pos',documentNumber:'21/2000',paperKey:'BT-Drucksache 21/2000',title:'Gesetzentwurf',updatedAt:vor(2),publishedAt:vor(2),committees:['we'],lead:'we',topics:[]};
+ const treffer={...position,externalId:'drs',committees:[],lead:null,ministries:['bmwe']};
+ await runMonitor({sources:[ausschuss,volltext],fetcher:async(s)=>s.id==='dip-committees'?[position]:[treffer],retentionDays:10});
+ assert.equal((await dashboard()).items.length,1,'zusammengeführt');
+ await runMonitor({sources:[ausschuss,volltext],fetcher:async(s)=>s.id==='dip-committees'?[]:[treffer],retentionDays:10});
+ assert.equal((await dashboard()).items.length,1,'die Volltextsuche liefert das Papier weiter - es bleibt');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});

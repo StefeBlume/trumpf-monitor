@@ -29,7 +29,9 @@ function sammelpapiere(items:Pick<DocumentInput,'paperKey'|'url'>[]):Set<string>
 // Von Hand hochgezaehlt wurde das einmal vergessen: nach der EUV-Korrektur blieben Nachrichtendienstrecht
 // und Verwaltungsgerichtsordnung live Halbleiter-Treffer. Der Stand traegt deshalb einen Fingerabdruck des
 // Rasters; die Zahl davor bleibt fuer Aenderungen der Zuordnung ausserhalb der Themen.
-export function erfassungsstand(topics:unknown,logik=5):string{
+// Logik 6: Abgleich der DIP-Quellen. Ein voller Abruf raeumt dabei Eintraege ab, die frueher verworfene
+// Dokumente mit veralteten Treffern hinterlassen haben.
+export function erfassungsstand(topics:unknown,logik=6):string{
  const raster=JSON.stringify(topics,(_k,v)=>v instanceof RegExp?`/${v.source}/${v.flags}`:v);
  return `${logik}:${createHash('sha256').update(raster).digest('hex').slice(0,12)}`;
 }
@@ -88,6 +90,8 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  // Schluessel ist das Papier, nicht die Nummer: "21/90" benennt im DIP drei verschiedene Dokumente.
  const jePapier=new Map<string,Item>();
  for(const i of initial.items)if(i.paperKey&&!i.archived)jePapier.set(i.paperKey,i);
+ // Abgleich: was eine DIP-Quelle in ihrem Fenster nicht mehr liefert, passt nicht mehr zur Auswahl.
+ const papiereImLauf=new Set<string>();const abgleich:Item[]=[];
  const updated:Item[]=[];let ok=0,failed=0,manual=0;const errors:string[]=[];
  for(const source of all){
  // Das Lobbyregister liefert Akteure statt Dokumente und laeuft deshalb an der Dokumentpruefung vorbei.
@@ -109,6 +113,7 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const since=lookbackStart(stand?.status==='ok'&&stand.erfassung===ERFASSUNGSSTAND?stand.checkedAt:undefined);
  let warning:string|null=null;
  const docs=await(options.fetcher??ingest)(source,since,(note:string)=>{warning=note;});
+ for(const d of docs)if(d.paperKey)papiereImLauf.add(d.paperKey);
  const sammel=sammelpapiere([...initial.items,...updated,...docs]);
  const baseline=!states.get(source.id)?.checkedAt&&!initial.items.some(i=>i.sourceId===source.id);
  const statements:any[]=[];const sourceUpdates:Item[]=[];
@@ -151,7 +156,7 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const eigenerStand=(i:Item):DocumentInput=>source.kind==='committee-dip'?{...i,ministries:[]}:source.kind==='fulltext-dip'?{...i,committees:[],lead:null}:i;
  const gleich=!!old&&(hash===old.hash||hash===contentHash(eigenerStand(old)));
  const change=old?(gleich?'unchanged':'changed'):(baseline?'baseline':'new');
- const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(change==='changed'?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false};
+ const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(change==='changed'?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false,quelleStand:doc.updatedAt??doc.publishedAt??null};
  if(item.paperKey)jePapier.set(item.paperKey,item);
  statements.push({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[itemId,source.id,JSON.stringify(item)]});
  if(change!=='unchanged'){
@@ -163,10 +168,22 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  // Ein leeres Ergebnis ist hier eine gültige Aussage: im Fenster wurde nichts Passendes überwiesen oder veröffentlicht.
  statements.push({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:warning?'partial':'ok',checkedAt:now,count:docs.length,error:warning,since,erfassung:ERFASSUNGSSTAND})]});
  await c.batch(statements,'write');updated.push(...sourceUpdates);ok++;if(warning)errors.push(`${source.institution}: ${warning}`);
+ // Die Volltextsuche liefert nur Dokumente mit Thema. Verlor eines durch eine Regelaenderung alle Themen,
+ // kam es nicht mehr an, und der gespeicherte Eintrag behielt seinen falschen Treffer: die Antwort
+ // Drs. 21/7783 blieb ein Halbleiter-Treffer wegen "Artikel 2 EUV". DIP filtert das Fenster nach dem
+ // Aenderungsdatum, und das waechst nur. Was im Fenster liegt und nicht mehr geliefert wird, passt
+ // deshalb nicht mehr zur Auswahl. Nur nach vollstaendigem Abruf.
+ if(!warning&&(source.kind==='committee-dip'||source.kind==='fulltext-dip')){
+  const geliefert=new Set(docs.map(d=>d.externalId));
+  for(const i of initial.items)if(i.sourceId===source.id&&!i.archived&&!geliefert.has(i.externalId)&&(i.quelleStand??i.updatedAt??'')>=since)abgleich.push(i);
+ }
  }catch(e){failed++;const error=e instanceof Error?e.message:'Abruf fehlgeschlagen';errors.push(`${source.institution}: ${error}`);await c.execute({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:'error',checkedAt:states.get(source.id)?.checkedAt??null,count:states.get(source.id)?.count??0,error})]});}
  // Renew owner-specific lease between sources.
  await c.execute({sql:'UPDATE locks SET expires=? WHERE id=? AND owner=?',args:[Date.now()+600000,'monitor',id]});
  }
+ // Ein Papier, das eine andere Quelle in diesem Lauf geliefert hat, bleibt: es ist mit ihr zusammengefuehrt.
+ const weg=abgleich.filter(i=>!(i.paperKey&&papiereImLauf.has(i.paperKey))).map(i=>i.id);
+ if(weg.length){const l=weg.map(()=>'?').join(',');await c.batch([{sql:`DELETE FROM versions WHERE item_id IN (${l})`,args:weg},{sql:`DELETE FROM events WHERE json_extract(data,'$.itemId') IN (${l})`,args:weg},{sql:`DELETE FROM items WHERE id IN (${l})`,args:weg}],'write');}
  if(ok)await deduplicate();
  if(retention>0&&ok)await prune(retention,[...new Set([...configuredSources().map(s=>s.id),...all.map(s=>s.id)])]);
  // Das Briefing traegt die Dokumente mit; bei einem Erstimport waren das 184 KB. Gespeichert werden
