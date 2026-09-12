@@ -42,7 +42,10 @@ export default function Home(){
  const [conn,setConn]=useState<Connection>({url:'',token:''}),[draft,setDraft]=useState<Connection>({url:'',token:''}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[online,setOnline]=useState(false),[ready,setReady]=useState(false);
  const [pickedBriefing,setPickedBriefing]=useState<string>(''),[versions,setVersions]=useState<{versions:Item[];diff:{added?:boolean;removed?:boolean;value:string}[]}|null>(null),[tab,setTab]=useState('detail');
  const mainRef=useRef<HTMLElement>(null);
- async function loadSnapshot(){const r=await fetch(new URL('bootstrap.json',window.location.href).href,{cache:'no-store'});if(!r.ok)throw new Error('Stand nicht erreichbar');return await r.json() as Dashboard;}
+ // Nicht relativ zur Adresszeile: Next.js entfernt nach dem Start den Schraegstrich, sobald die Adresse einen
+ // Parameter traegt. Aus "/trumpf-monitor/?x=1" wurde "/trumpf-monitor?x=1", der Abruf ging an
+ // "/bootstrap.json" (404), und die App blieb leer - bei jedem geteilten Link mit ?fbclid= oder ?utm_.
+ async function loadSnapshot(){const r=await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH??''}/bootstrap.json`,{cache:'no-store'});if(!r.ok)throw new Error('Stand nicht erreichbar');return await r.json() as Dashboard;}
  async function reload(){setBusy(true);setError('');try{setData(await loadSnapshot());setOnline(true);setNotice('Stand neu geladen.');}catch{setOnline(false);setError('Der gespeicherte Stand konnte nicht geladen werden. Bitte Internetverbindung prüfen.');}finally{setBusy(false);}}
  const cache=(d:Dashboard)=>{setData(d);try{localStorage.setItem('policy-cache',JSON.stringify(d));}catch{}};
  async function refresh(c=conn){setError('');try{const d=await request<Dashboard>(c,'dashboard');cache(d);setOnline(true);return true;}catch(e){setOnline(false);setError(e instanceof Error&&/timed? ?out|timeout|network|fetch/i.test(e.message)?'Die Verbindung dauert zu lange. Bitte Internetverbindung prüfen und erneut versuchen. Dein gespeicherter Stand bleibt erhalten.':e instanceof Error?e.message:'Keine Verbindung. Dein gespeicherter Stand bleibt erhalten.');return false;}}

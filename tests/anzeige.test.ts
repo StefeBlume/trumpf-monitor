@@ -226,3 +226,15 @@ test('Termine heißen Termine, nicht Veröffentlichungen',()=>{
  assert.equal((seite.match(/\{istTermin\(item\)\?'Sitzung am':'Dokument vom'\}/g)??[]).length,2,'beide Kartenformen unterscheiden');
  assert.ok(seite.includes('&&istTermin(i);'),'"Als Nächstes" nutzt dieselbe Bestimmung');
 });
+
+// Mit einem Parameter in der Adresse entfernt Next.js nach dem Start den Schraegstrich. Der Stand wurde
+// relativ zur Adresszeile geladen: "/trumpf-monitor/?x=1" fragte "/bootstrap.json" ab, erhielt 404, und die
+// App zeigte kein einziges Dokument - so kommen Links an, die ueber soziale Netzwerke geteilt werden.
+test('Der Stand wird über den Basispfad geladen, nicht relativ zur Adresse',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(!/new URL\('bootstrap\.json',window\.location/.test(seite),'kein Abruf relativ zur Adresszeile');
+ assert.ok(seite.includes("fetch(`${process.env.NEXT_PUBLIC_BASE_PATH??''}/bootstrap.json`"),'der Pfad kommt aus dem Build');
+ const config=readFileSync('next.config.mjs','utf8');
+ assert.match(config,/basePath:base/,'Build und Abruf nutzen denselben Basispfad');
+ assert.match(config,/process\.env\.NEXT_PUBLIC_BASE_PATH/,'aus derselben Variable');
+});
