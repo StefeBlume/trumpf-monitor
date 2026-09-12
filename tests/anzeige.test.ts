@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 import {recency,datumsteil,suchtext,bewegungswort,datum,nurTag} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
@@ -279,4 +279,22 @@ test('Die Akteure-Ansicht beschreibt ihre Sortierung so, wie sie sortiert',()=>{
  assert.match(seite,sortierung,'Beschreibung und Sortierung gehören zusammen');
  assert.ok(!seite.includes("'Vorhaben gemeldet':'Vorhaben gemeldet'"),'kein Zweig mit zwei gleichen Ergebnissen');
  assert.ok(!seite.includes('Ausgewählte Ausschüsse und Ressorts'),'der Export nennt auch die Themensuche');
+});
+
+// Das README nannte "Standard 180" für die Aufbewahrung (der Code nutzt 10), "69 Tests in vier Dateien",
+// "werden nie entfernt" für Termine und die Zusammenführung über die blosse Drucksachennummer.
+test('Das README nennt die Werte und Regeln, die der Code verwendet',()=>{
+ const readme=readFileSync('README.md','utf8');
+ const monitor=readFileSync('src/server/monitor.ts','utf8');
+ const code=Number(/RETENTION_DAYS\?\?(\d+)/.exec(monitor)![1]);
+ const tabelle=Number(/\| `RETENTION_DAYS` \| nein \| Standard (\d+)/.exec(readme)![1]);
+ assert.equal(tabelle,code,'Aufbewahrungsfrist in Tabelle und Code');
+ assert.ok(!readme.includes('werden nie entfernt'),'Termine laufen zehn Tage nach ihrem Datum ab');
+ assert.ok(!readme.includes('Einträge mit gleicher Drucksachennummer werden zusammengelegt'),'zusammengeführt wird das Papier, nicht die Nummer');
+ assert.ok(!/\d+ Tests in \S+ Dateien/.test(readme),'keine Testzahl, die mit dem nächsten Test veraltet');
+ for(const f of readdirSync('tests').filter(f=>f.endsWith('.test.ts')))assert.ok(readme.includes('`tests/'+f+'`'),`das README beschreibt tests/${f}`);
+ assert.ok(!readme.includes('Sortiert wird nach Themenbreite, dann nach Zahl der Vorhaben'),'Akteure werden anders sortiert');
+ assert.ok(!readme.includes('Sortiert wird nach Fundstellen im Titel'),'die Listen ordnen nach der letzten Bewegung');
+ assert.ok(!readme.includes('`EUV` treffen nur in Großschreibung'),'EUV verlangt einen Halbleiterbezug im Satz');
+ assert.ok(readme.includes('`ERFASSUNGSSTAND`')&&monitor.includes('export const ERFASSUNGSSTAND'),'der Erfassungsstand ist dokumentiert und existiert');
 });

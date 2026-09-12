@@ -20,11 +20,13 @@ Das Raster in `src/server/topics.ts` folgt dem Geschäft von TRUMPF: Familienunt
 | Lieferketten & Rohstoffe | Seltene Erden, Vorprodukte, Zölle |
 | Familienunternehmen & Mittelstand | Erbschaft- und Unternehmensteuer |
 
-**Wie gesucht wird.** Begriffe werden mit eigenen Wortgrenzen gesucht, weil `\b` bei Umlauten unzuverlässig ist. Deutsche Beugung wird berücksichtigt, auch mitten in Mehrwortbegriffen („seltene Erden" findet „seltenen Erden"), und zwischen den Wörtern steht `\s+`, damit ein Zeilenumbruch aus dem PDF-Volltext nicht trennt. Abkürzungen wie `AWG`, `AWV` oder `EUV` treffen nur in Großschreibung, sonst würden sie Silben in fremden Wörtern erwischen.
+**Wie gesucht wird.** Begriffe werden mit eigenen Wortgrenzen gesucht, weil `\b` bei Umlauten unzuverlässig ist. Deutsche Beugung wird berücksichtigt, auch mitten in Mehrwortbegriffen („seltene Erden" findet „seltenen Erden"), und zwischen den Wörtern steht `\s+`, damit ein Zeilenumbruch aus dem PDF-Volltext nicht trennt. Die Abkürzungen `AWG` und `AWV` treffen nur in Großschreibung, sonst würden sie Silben in fremden Wörtern erwischen.
 
-**Kontextbedingung.** Zu breite Begriffe zählen nur, wenn im selben Dokument auch ein Fertigungs- oder Industriebegriff steht. „Künstliche Intelligenz" allein trifft sonst KI-generierte Musik, „Bürokratieabbau" das Vereinssteuerrecht. Beide Fundstellen werden als Beleg angezeigt.
+**Kontextbedingung.** Zu breite Begriffe zählen nur mit einem Bezug. Beim Wirtschaftsstandort genügt ein Industrie- oder Wirtschaftsbegriff im selben Dokument; „Bürokratieabbau" allein trifft sonst das Vereinssteuerrecht. Bei Industrieller KI und bei `EUV` muss der Bezug im **selben Satz** stehen: „Künstliche Intelligenz" steht in Gerichts-, Migrations- und Verwaltungstexten, und `EUV` ist in Gesetzestexten der Vertrag über die Europäische Union. Der Fundbegriff selbst zählt dabei nicht als Bezug.
 
-**Reihenfolge.** Sortiert wird nach Fundstellen im Titel, dann nach Zahl der berührten Themen, dann nach Häufigkeit — alles drei abzählbare Eigenschaften des Textes, keine Gewichtung.
+**Ausnahmen.** Zwei feste Formulierungen zählen nicht als Fundstelle: beim Mittelstand die Kostenformel jedes Gesetzentwurfs („Der Wirtschaft, einschließlich mittelständischer Unternehmen, entstehen keine …"), bei Dual-Use der Name „Bundesamt für Wirtschaft und Ausfuhrkontrolle", das auch Energie- und Gebäudeförderung verwaltet.
+
+**Reihenfolge.** Beide Listen des Lagebilds ordnen nach der letzten Bewegung laut Quelle, neueste zuerst. Innerhalb eines Dokuments stehen Themen mit Fundstelle im Titel vor den übrigen, dann nach Häufigkeit — abzählbare Eigenschaften des Textes, keine Gewichtung.
 
 ## Die Auswahl
 
@@ -50,15 +52,19 @@ Die Termin- und Tagesordnungslisten sind HTML-Listen der Ausschussseiten, keine 
 
 Abgerufen wird inkrementell über `f.aktualisiert.start`: ab dem letzten erfolgreichen Lauf mit zwei Tagen Überlappung, höchstens 30 Tage zurück, beim Erstlauf 14 Tage.
 
+**Erfassungsstand.** Themen und Gremien entstehen beim Eingang. Ändert sich das Themenraster oder die Zuordnungslogik, holt der nächste Lauf deshalb einmal das volle Fenster. Der Stand besteht aus einer Logikversion und einem Fingerabdruck des Rasters (`ERFASSUNGSSTAND` in `src/server/monitor.ts`); eine Änderung an Begriffen, Ausnahmen oder Kontextregeln löst den Neuabruf von selbst aus.
+
+**Abgleich.** DIP filtert nach dem Änderungsdatum, und das wächst nur. Was eine DIP-Quelle in ihrem Fenster nicht mehr liefert, passt nicht mehr zur Auswahl und fällt heraus — etwa ein Dokument, das nach einer Regeländerung kein Thema mehr hat. Nicht nach einer Teilwarnung, und nicht, wenn eine andere Quelle dasselbe Papier im selben Lauf geliefert hat.
+
 **Adressen.** Nur freigegebene amtliche HTTPS-Domains werden abgerufen (`officialURL` in `src/server/parsing.ts`). Jede Adresse, die als Quelle in der Oberfläche erscheint, läuft vorher durch `sourceURL` — syntaktisch gültig reicht nicht, sie muss auf einer Behördendomain liegen. Das gilt auch für Verweise aus fremdem Markup (Termin- und Tagesordnungslisten) und aus RSS-Feeds. Weiterleitungen über Domaingrenzen hinweg werden abgebrochen, statt den API-Schlüssel mitzusenden.
 
 **Formatbrüche.** Terminlisten melden einen Fehler, wenn ein Ausschuss gar keine Einträge im erwarteten Format liefert; brechen mehr als die Hälfte, scheitert die Quelle ganz. Die Tagesordnungstabelle meldet einen Fehler, wenn Zeilen vorhanden sind, aber keine Verweise enthalten. Eine leere Liste in sitzungsfreien Wochen ist dagegen gültig. Diese Prüfungen gibt es, weil der Tagesordnungs-Parser nach einem Spaltenwechsel schon einmal still auf null lief.
 
 **Eingangsfilter.** Dieselbe Grenze greift schon beim Eingang: was älter ist, wird gar nicht erst angelegt. Ohne sie entsteht ein Kreislauf, weil Terminlisten bei jedem Lauf dieselben alten Sitzungen liefern — die App legt sie an, die Aufbewahrung löscht sie, der nächste Lauf meldet sie erneut als „neu". Das Briefing zeigte dadurch dauerhaft dreistellige Zahlen, obwohl sich nichts bewegt hatte.
 
-**Aufbewahrung.** `RETENTION_DAYS` (Standard 10) entfernt nach jedem erfolgreichen Lauf alles, was älter ist — samt Versionen und Ereignissen. Maßstab ist das Datum des Dokuments selbst (Bewegung laut Quelle, sonst Veröffentlichung, sonst Erstkontakt), nicht der letzte Abruf: sonst blieben monatealte Papiere liegen, nur weil die App sie gestern wiedergesehen hat. Künftige Termine liegen jenseits der Frist und werden nie entfernt. Archiviertes bleibt.
+**Aufbewahrung.** `RETENTION_DAYS` (Standard 10) entfernt nach jedem erfolgreichen Lauf alles, was älter ist — samt Versionen und Ereignissen. Maßstab ist das Datum des Dokuments selbst (Bewegung laut Quelle, sonst Veröffentlichung, sonst Erstkontakt), nicht der letzte Abruf: sonst blieben monatealte Papiere liegen, nur weil die App sie gestern wiedergesehen hat. Anhörungen bleiben bis zehn Tage nach ihrem Termin. Archiviertes bleibt.
 
-**Zusammenführung.** Dieselbe Drucksache erreicht die App aus zwei Richtungen: als Ausschussüberweisung (mit Gremien, aber nur der Titel durchsucht) und aus der Volltextsuche (mit Themen, aber ohne Gremien). Nach jedem Lauf geht `deduplicate` über den gesamten Bestand: Einträge mit gleicher Drucksachennummer werden zusammengelegt, der Eintrag mit den meisten Gremien behält die Führung und erbt Themen, Ressorts und Gremien der anderen, die samt Versionen und Ereignissen verschwinden. Ein Durchgang nur innerhalb eines Laufs reichte nicht — die Quellen haben unterschiedliche Zeitfenster, und Altbestand blieb liegen.
+**Zusammenführung.** Dieselbe Drucksache erreicht die App aus zwei Richtungen: als Ausschussüberweisung (mit Gremien) und aus der Volltextsuche (mit Themen). Zusammengeführt wird nur dasselbe **Papier** — Herausgeber, Dokumentart und Nummer, etwa „BT-Drucksache 21/7984". Eine Nummer allein genügt nicht: „21/90" ist im DIP eine Bundesrats-Verordnung, eine Kleine Anfrage und das Plenarprotokoll der 90. Sitzung. Plenarprotokolle tragen deshalb keine Drucksachennummer. Verweisen mehrere Vorgänge auf ein Papier (die Sammel-Unterrichtung 21/7984 listet 19 Berichte), bleibt jeder Vorgang ein eigener Eintrag. Beim Zusammenführen gewinnt das jüngere Datum, sonst löschte die Aufbewahrung mit dem alten Eintrag die frische Bewegung.
 
 ## Setup
 
@@ -79,7 +85,7 @@ npm run dev                  # http://localhost:4180
 | `DATABASE_URL` | nein | Standard `file:data/monitor.db` |
 | `SCHEDULE_ENABLED` | nein | Nur auf `true` setzen, wenn ein echter Scheduler eingerichtet ist |
 | `DIP_WAHLPERIODE` | nein | Standard 21 |
-| `RETENTION_DAYS` | nein | Standard 180; `0` schaltet die Aufbewahrungsgrenze ab |
+| `RETENTION_DAYS` | nein | Standard 10; `0` schaltet die Aufbewahrungsgrenze ab |
 | `BAFA_FEED_URL` | nein | Abweichende amtliche Feed-URL |
 
 ### Zeitplan
@@ -88,7 +94,7 @@ Die Zeitsteuerung liegt beim Scheduler, nicht im Code: `runMonitor()` läuft, wa
 
 ## Änderungserkennung
 
-Pro Dokument wird ein SHA-256 über Titel, Dokumenttyp, Verfahrensschritt, Drucksachennummer, PDF-Adresse, Gremienzuordnung, Urheber und Datum gebildet. Statuswerte: `baseline` (Erstimport), `new`, `changed`, `unchanged`. Jede Änderung schreibt eine Version; die Detailansicht zeigt den Wortdiff zur Vorversion.
+Pro Dokument wird ein SHA-256 über Titel, Text, Adresse, Datum, Beratungsstand, Dokumenttyp, Verfahrensschritt, Drucksachennummer, PDF-Adresse, Gremien, Federführung, Ressorts und Urheber gebildet (`contentHash`). Als unverändert gilt auch, was mit einem Hash aus einer früheren Darstellung übereinstimmt; Angaben, die eine andere Quelle eingearbeitet hat, zählen dabei nicht. Statuswerte: `baseline` (Erstimport), `new`, `changed`, `unchanged`. Jede Änderung schreibt eine Version; im lokalen Serverbetrieb zeigt die Detailansicht den Wortdiff zur Vorversion.
 
 Ein Erstimport ist kein Fund. Die Zusammenfassung sagt das ausdrücklich.
 
@@ -101,17 +107,17 @@ Ein Erstimport ist kein Fund. Die Zusammenfassung sagt das ausdrücklich.
 - **Der Auswärtige Ausschuss führt keine öffentliche Terminliste.** Er tagt überwiegend nicht öffentlich; seine Sitzungen erscheinen nur über die Tagesordnungsliste.
 - **Aufbewahrung zehn Tage.** Jeder Lauf entfernt Dokumente, deren letzte Bewegung laut Quelle länger zurückliegt (`RETENTION_DAYS`, Standard 10); ohne Quellendatum zählt der Erstkontakt. Künftige Termine bleiben bis nach ihrem Datum. Von den Briefings bleiben die letzten 60 gespeichert, ausgeliefert werden zwölf.
 - **EUR-Lex und Have Your Say sind nicht angebunden.** Beides liegt außerhalb der Ausschuss- und Ressortauswahl; EU-Vorlagen erscheinen nur, soweit sie an einen ausgewählten Ausschuss überwiesen wurden.
-- **Keine Meldung ist kein Entwarnungsnachweis.** Die Anzeige gilt nur für die ausgewählten Gremien und die erfolgreich abgerufenen Quellen. Fehlgeschlagene Abrufe werden pro Quelle mit Fehlertext ausgewiesen.
+- **Keine Meldung ist kein Entwarnungsnachweis.** Die Anzeige gilt nur für die ausgewählten Gremien, die Themensuche in den Drucksachen und die erfolgreich abgerufenen Quellen. Fehlgeschlagene Abrufe werden pro Quelle mit Fehlertext ausgewiesen.
 
 ## Interessenvertretung
 
 Das amtliche [Lobbyregister des Bundestags](https://www.lobbyregister.bundestag.de/) hat eine JSON-Schnittstelle. Die App stellt je Thema eine eigene Abfrage (`LOBBY_QUERIES` in `src/server/lobby.ts`) und führt die Treffer zusammen.
 
-**Was angezeigt wird.** Aufgeführt wird, wer mindestens zwei der Themen berührt — bei einem einzigen Thema sind es über 1.600 Einträge, bei zweien rund 95. Der eigene Eintrag von TRUMPF (R000697) bleibt immer dabei. Sortiert wird nach Themenbreite, dann nach Zahl der Vorhaben; beides sind Angaben aus dem Register.
+**Was angezeigt wird.** Aufgeführt wird, wer mindestens zwei der Themen berührt — bei einem einzigen Thema sind es über 1.600 Einträge, bei zweien rund 95. Der eigene Eintrag von TRUMPF (R000697) bleibt immer dabei. Der eigene Eintrag steht zuerst, dann wird nach der Zahl der Vorhaben zu den Themen sortiert, dann nach Themenbreite; beides sind Angaben aus dem Register.
 
 Je Akteur zeigt die App: Art (Unternehmen, Verband, Wissenschaft), berührte Themen, Zahl der bearbeiteten Gesetzesvorhaben, Stellungnahmen, Vollzeitstellen für Interessenvertretung, jährlicher Aufwand als Spanne, Interessenfelder und den Stand des Eintrags.
 
-**Welche Vorhaben.** Die Zahl allein sagt nichts, deshalb holt die App die Vorhaben selbst: Titel, berührte Themen und die zugehörige Drucksache mit Link. Angezeigt wird nur, was eines der Themen berührt. Das Register liefert Vorhaben ausschließlich in der Detailsuche, und die ist groß — eine themenweite Abfrage sind 26 bis 43 MB. Deshalb wird je Eintrag einzeln abgerufen, nur wenn sich sein Registerstand seit dem letzten Mal geändert hat, und höchstens `MAX_DETAIL_FETCHES` (25) pro Lauf. Nach etwa vier Läufen sind alle erfasst; danach nur noch, was sich ändert.
+**Welche Vorhaben.** Die Zahl allein sagt nichts, deshalb holt die App die Vorhaben selbst: Titel, berührte Themen und, wo das Register eine nennt, die zugehörige Drucksache mit Link — bei den meisten Vorhaben ist das keine. Angezeigt wird nur, was eines der Themen berührt. Das Register liefert Vorhaben ausschließlich in der Detailsuche, und die ist groß — eine themenweite Abfrage sind 26 bis 43 MB. Deshalb wird je Eintrag einzeln abgerufen, nur wenn sich sein Registerstand seit dem letzten Mal geändert hat, und höchstens `MAX_DETAIL_FETCHES` (25) pro Lauf. Nach etwa vier Läufen sind alle erfasst; danach nur noch, was sich ändert.
 
 **Grenze.** Das Register zeigt, wer sich *registriert* hat und was er *selbst angibt* — nicht, wer tatsächlich Einfluss nimmt. Es ist eine Selbstauskunft mit gesetzlicher Pflicht, keine Wirkungsmessung.
 
@@ -153,13 +159,15 @@ NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
 npm test
 ```
 
-69 Tests in vier Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+Fünf Testdateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
 
 `tests/topics.test.ts` deckt die Themensuche ab: Stimmigkeit des Rasters, Erkennung aller TRUMPF-Kernthemen, Abkürzungen nur in Großschreibung, industrieller Kontext für KI und die breiten Standortbegriffe, deutsche Beugung samt Zeilenumbruch, Zählung und Titelvermerk, Reihenfolge und die Belegqualität.
 
 `tests/lobby.test.ts` deckt das Register ab: eine Abfrage je Thema, vollständige Übernahme eines echten Eintrags, unvollständige Antworten, Zusammenführung über mehrere Abfragen, die Zwei-Themen-Schwelle samt Ausnahme für den eigenen Eintrag, die Reihenfolge, das Ersetzen statt Anhäufen und der Fall, dass ein Registerausfall die Dokumentquellen nicht mitreißt.
 
 `tests/hardening.test.ts` deckt die Randfälle ab, die im Audit aufgefallen sind: fremde Adressen aus fremdem Markup, unsichtbare Trennzeichen, Formatbrüche gegen legitime Leerergebnisse, keine Wiederholung dauerhafter Fehler, Datumsüberlauf (der 31. Februar wurde zum 3. März), Namensabgleich über alle 24 echten Ausschussbezeichnungen, Aufbewahrung, sichtbare Teilausfälle und unvollständige API-Antworten.
+
+`tests/anzeige.test.ts` deckt ab, was sichtbar ist: Wortwahl und Zahlen der Oberfläche gegen den Bestand, Datumsangaben ohne erfundene Uhrzeit, die Beschriftung von Terminen, die mobile Darstellung, und dass README, Oberfläche und Zeitplan dieselben Werte nennen wie der Code.
 
 ## Was die App ausmacht
 
