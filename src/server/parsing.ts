@@ -2,6 +2,7 @@ import {XMLParser,XMLValidator} from 'fast-xml-parser';
 import {load} from 'cheerio/slim';
 import {createHash} from 'node:crypto';
 import type {DocumentInput} from '../model';
+import {scanTopics} from './topics';
 // Weiche Trennstriche und Zero-Width-Zeichen aus dem CMS zerlegen Woerter unsichtbar:
 // "Stromversorgungs\u00adgesetz" waere per Suche nicht auffindbar.
 export const clean = (x:unknown):string => load(typeof x === 'string' ? x : String(x ?? ''),null,false).text().replace(/[\u00ad\u200b-\u200d\ufeff]/g,'').replace(/\s+/g,' ').trim();
@@ -19,9 +20,10 @@ export function parseFeed(xml:string,base:string):DocumentInput[] {
  return raw.map((entry:Record<string,any>):DocumentInput|null=>{
   const link=typeof entry.link==='string'?entry.link:arr<Record<string,any>>(entry.link).find(l=>!l['@_rel']||l['@_rel']==='alternate')?.['@_href'];
   const url=sourceURL(link,base); const title=clean(entry.title?.['#text']??entry.title);
+  const text=clean(entry['content:encoded']??entry.content?.['#text']??entry.content??entry.description??entry.summary?.['#text']??entry.summary??'');
   if(!url||!title)return null;
   const date=entry.pubDate??entry.published??null;
-  return {externalId:String(entry.guid?.['#text']??entry.guid??entry.id??url),title,url,text:clean(entry['content:encoded']??entry.content?.['#text']??entry.content??entry.description??entry.summary?.['#text']??entry.summary??''),publishedAt:date&&!isNaN(Date.parse(date))?new Date(date).toISOString():null,updatedAt:date&&!isNaN(Date.parse(date))?new Date(date).toISOString():null,documentType:'RSS-Meldung',step:null,procedure:null,documentNumber:null,pdfUrl:null,committees:[],lead:null,ministries:[],originator:null};
+  return {externalId:String(entry.guid?.['#text']??entry.guid??entry.id??url),title,url,text,publishedAt:date&&!isNaN(Date.parse(date))?new Date(date).toISOString():null,updatedAt:date&&!isNaN(Date.parse(date))?new Date(date).toISOString():null,documentType:'RSS-Meldung',step:null,procedure:null,documentNumber:null,pdfUrl:null,committees:[],lead:null,ministries:[],originator:null,topics:scanTopics(title,text)};
  }).filter((x:DocumentInput|null):x is DocumentInput=>!!x);
 }
 export function contentHash(doc:DocumentInput):string {

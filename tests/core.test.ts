@@ -1,10 +1,10 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {parseFeed,contentHash,officialURL,germanDate,parseCommitteeEvents,parseAgendaTable} from '../src/server/parsing';
-import {mapCommitteePosition,mapMinistryDrucksache,matchCommitteeName,lookbackStart} from '../src/server/connectors';
+import {mapCommitteePosition,mapFulltextDrucksache,matchCommitteeName,lookbackStart} from '../src/server/connectors';
 import {berlinClock,runMonitor,dashboard,history,briefingSummary,seedFromSnapshot} from '../src/server/monitor';
 import {resetDBForTests} from '../src/server/db';import {COMMITTEES,MINISTRIES,type DocumentInput,type Item,type Source} from '../src/model';
-const doc:DocumentInput={externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',url:'https://www.bundestag.de/test',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',step:'Gesetzentwurf',procedure:'Gesetzgebung',documentNumber:'21/1234',pdfUrl:null,committees:['we'],lead:'we',ministries:[],originator:'Bundesregierung'};
+const doc:DocumentInput={externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',url:'https://www.bundestag.de/test',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',step:'Gesetzentwurf',procedure:'Gesetzgebung',documentNumber:'21/1234',pdfUrl:null,committees:['we'],lead:'we',ministries:[],originator:'Bundesregierung',topics:[]};
 // Aus einer echten DIP-Vorgangsposition gekürzt.
 const position={id:'698164',vorgangsposition:'Unterrichtung',vorgangstyp:'EU-Vorlage',titel:'Vorschlag für eine Verordnung',vorgang_id:'338133',datum:'2026-08-04',
  aktualisiert:'2026-09-05T10:39:50+02:00',
@@ -46,10 +46,16 @@ test('Fremde PDF-Adressen werden nicht als amtliche Quelle ausgegeben',()=>{
  assert.equal(mapCommitteePosition({...position,fundstelle:{...position.fundstelle,pdf_url:'https://attacker.example/x.pdf'}})!.pdfUrl,null);
 });
 test('Ressorts werden über das amtliche Urheberfeld erkannt, nicht über den Titel',()=>{
- const hit=mapMinistryDrucksache({id:'9',titel:'Verordnung',datum:'2026-09-01',drucksachetyp:'Verordnung',dokumentnummer:'21/9',fundstelle:{urheber:['Bundesministerium für Wirtschaft und Energie']}})!;
+ const hit=mapFulltextDrucksache({id:'9',titel:'Verordnung',datum:'2026-09-01',drucksachetyp:'Verordnung',dokumentnummer:'21/9',fundstelle:{urheber:['Bundesministerium für Wirtschaft und Energie']}})!;
  assert.deepEqual(hit.ministries,['bmwe']);
- assert.equal(mapMinistryDrucksache({id:'9',titel:'Bericht des Bundesministeriums für Wirtschaft und Energie',fundstelle:{urheber:['Fraktion der AfD']}}),null);
- assert.equal(mapMinistryDrucksache({id:'9',titel:'X',fundstelle:{urheber:['Bundesministerium für Gesundheit']}}),null);
+ // Der Titel allein macht kein Ressort: entscheidend ist das amtliche Urheberfeld.
+ assert.equal(mapFulltextDrucksache({id:'9',titel:'Bericht des Bundesministeriums für Wirtschaft und Energie',fundstelle:{urheber:['Fraktion der AfD']}}),null);
+ assert.equal(mapFulltextDrucksache({id:'9',titel:'X',fundstelle:{urheber:['Bundesministerium für Gesundheit']}}),null);
+ // Ohne Ressortbezug entscheidet der Volltext: ein Dual-Use-Bezug steht selten im Titel.
+ const volltext=mapFulltextDrucksache({id:'10',titel:'Entwurf eines Gesetzes',fundstelle:{urheber:['Fraktion der AfD']},
+  text:'Die Ausfuhrkontrolle für Güter mit doppeltem Verwendungszweck wird angepasst.'})!;
+ assert.deepEqual(volltext.topics.map(t=>t.topic),['dualuse']);
+ assert.equal(volltext.ministries.length,0);
 });
 test('Tagesordnungen werden nur für ausgewählte Ausschüsse übernommen',()=>{
  // Kurzbezeichnung der Spalte gegen den langen amtlichen Namen.

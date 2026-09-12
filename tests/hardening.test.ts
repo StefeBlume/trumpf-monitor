@@ -8,7 +8,7 @@ import {COMMITTEES,MINISTRIES,SOURCES,type DocumentInput,type Source} from '../s
 
 const base='https://www.bundestag.de/';
 const doc=(over:Partial<DocumentInput>={}):DocumentInput=>({externalId:'1',title:'T',url:base+'a',text:'',publishedAt:null,updatedAt:null,
- documentType:'Gesetzentwurf',step:null,procedure:null,documentNumber:null,pdfUrl:null,committees:[],lead:null,ministries:[],originator:null,...over});
+ documentType:'Gesetzentwurf',step:null,procedure:null,documentNumber:null,pdfUrl:null,committees:[],lead:null,ministries:[],originator:null,topics:[],...over});
 
 // --- Quellenadressen ---------------------------------------------------------------------------
 test('Fremde Adressen aus fremdem Markup werden nicht als amtliche Quelle uebernommen',()=>{
@@ -157,7 +157,7 @@ test('Teilausfall einer Quelle erscheint im Status, nicht nur im Log',async()=>{
 test('Gleiche Kennung in zwei Quellen erzeugt zwei getrennte Eintraege',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'policy-ids-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
  const a:Source={id:'dip-committees',name:'A',institution:'A',url:base,kind:'committee-dip',note:'Fixture'};
- const b:Source={id:'dip-ministries',name:'B',institution:'B',url:base,kind:'ministry-dip',note:'Fixture'};
+ const b:Source={id:'dip-ministries',name:'B',institution:'B',url:base,kind:'fulltext-dip',note:'Fixture'};
  try{
  await runMonitor({sources:[a,b],fetcher:async()=>[doc({externalId:'gleich'})]});
  const items=(await dashboard()).items;

@@ -46,3 +46,33 @@
 .upcoming-body{font-size:12px;color:var(--muted);line-height:1.45}
 .moved{color:#8a6a2a}
 @media(max-width:760px){.upcoming-list{grid-template-columns:1fr}}
+.topicbar{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 30px}
+.topicchip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:9px 15px;font-size:13px;font-weight:550}
+.topicchip span{background:#eef1f7;color:var(--muted);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:650}
+.topicchip.chosen{border-color:var(--blue);background:#edf1ff;color:var(--blue)}
+.topicchip.chosen span{background:var(--blue);color:#fff}
+.topicchip.leer{opacity:.42}
+.topicchip.reset{border-style:dashed;color:var(--muted)}
+.topic-card{width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:10px;padding:20px 22px;color:var(--ink);display:flex;flex-direction:column;gap:10px}
+.topic-card:hover{border-color:var(--blue)}
+.topic-card h3{margin:0;font-size:16px;line-height:1.42;font-weight:600}
+.topic-card .item-meta{margin:0}
+.topic-tags{display:flex;flex-wrap:wrap;gap:6px}
+.badge.topic{color:#1d3f9e;background:#e9eeff;display:inline-flex;align-items:center;gap:6px}
+.badge.topic b{background:#1d3f9e;color:#fff;border-radius:999px;padding:1px 6px;font-size:10px;font-weight:650}
+.badge.topic.im-titel{background:var(--blue);color:#fff}
+.badge.topic.im-titel b{background:#ffffff38}
+.badge.topic i{font-style:normal;font-size:10px;opacity:.85}
+.beleg{margin:0;display:flex;gap:9px;background:#f6f8fc;border-radius:8px;padding:12px 14px;font-size:13px;line-height:1.6;color:#44526e}
+.beleg>svg{flex-shrink:0;margin-top:3px;color:#8ea3d6}
+.fundstellen{grid-column:1/-1}
+.fund{border-top:1px solid var(--line);padding:18px 0 4px}
+.fund:first-of-type{border-top:0}
+.fund-kopf{display:flex;align-items:baseline;gap:11px;flex-wrap:wrap;margin-bottom:5px}
+.fund-kopf strong{font-size:15px;font-weight:600}
+.fund-kopf span{font-size:12px;color:var(--muted)}
+.fund-why{font-size:13px!important;color:var(--muted)!important;margin:0 0 10px!important}
+@media(max-width:760px){.topicbar{gap:6px}.topicchip{padding:8px 12px;font-size:12px}}
+
+.briefing-hero .hero-bottom span{max-width:78%;line-height:1.55}
+@media(max-width:700px){.briefing-hero .hero-bottom span{max-width:100%}}

@@ -1,8 +1,12 @@
 import {SOURCES,COMMITTEES,MINISTRIES,committeeByKuerzel,type Source,type DocumentInput} from '../model';
 import {parseFeed,parseCommitteeEvents,parseAgendaTable,officialURL,clean} from './parsing';
+import {scanTopics} from './topics';
 export function configuredSources():Source[]{return SOURCES.map(s=>({...s,...(s.kind==='rss'&&s.env&&process.env[s.env]?{feed:process.env[s.env]}:{})}));}
 export class PermanentSourceError extends Error {}
-export async function fetchOfficial(url:string,headers:Record<string,string>={}):Promise<string>{
+// Standardgrenze 4 MB. Die Volltextsuche braucht mehr: eine einzelne Seite kann ein
+// Haushaltsgesetz im Volltext enthalten.
+export const FULLTEXT_LIMIT=32*1024*1024;
+export async function fetchOfficial(url:string,headers:Record<string,string>={},maxBytes=4_000_000):Promise<string>{
  if(!officialURL(url))throw new PermanentSourceError('Nur freigegebene amtliche HTTPS-Domains erlaubt');
  for(let attempt=0;attempt<3;attempt++){
  try{
@@ -15,10 +19,10 @@ export async function fetchOfficial(url:string,headers:Record<string,string>={})
  if(!officialURL(target)||new URL(target).origin!==new URL(url).origin&&Object.keys(headers).length)throw new PermanentSourceError('Weiterleitung nicht freigegeben'); next=target;continue;
  }
  if(!r.ok)throw r.status>=400&&r.status<500?new PermanentSourceError(`Quellenabruf HTTP ${r.status}`):new Error(`Quellenabruf HTTP ${r.status}`);
- if(Number(r.headers.get('content-length')??0)>4000000)throw new Error('Quelle überschreitet 4 MB');
+ if(Number(r.headers.get('content-length')??0)>maxBytes)throw new Error(`Quelle überschreitet ${Math.round(maxBytes/1048576)} MB`);
  const reader=r.body?.getReader();if(!reader)throw new Error('Leere Antwort');
  let size=0; const chunks:Uint8Array[]=[];
- while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>4000000){await reader.cancel();throw new Error('Quelle überschreitet 4 MB');}chunks.push(value);}
+ while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>maxBytes){await reader.cancel();throw new Error(`Quelle überschreitet ${Math.round(maxBytes/1048576)} MB`);}chunks.push(value);}
  return Buffer.concat(chunks).toString('utf8');
  }
  throw new Error('Zu viele Weiterleitungen');
@@ -31,14 +35,14 @@ export function lookbackStart(checkedAt?:string):string{
  const floor=Date.now()-30*86400000, overlap=checkedAt?Date.parse(checkedAt)-2*86400000:Date.now()-14*86400000;
  return new Date(Math.max(floor,Number.isFinite(overlap)?overlap:Date.now()-14*86400000)).toISOString().replace(/\.\d+Z$/,'Z');
 }
-async function dipPages(endpoint:string,since:string,onPage:(docs:any[])=>void):Promise<void>{
+async function dipPages(endpoint:string,since:string,onPage:(docs:any[])=>void,maxBytes?:number):Promise<void>{
  if(!process.env.DIP_API_KEY)throw new Error('DIP_API_KEY fehlt');
  let cursor:string|undefined;
  for(let page=0;page<100;page++){
  const u=new URL(`https://search.dip.bundestag.de/api/v1/${endpoint}`);
  u.searchParams.set('f.wahlperiode',String(WAHLPERIODE));u.searchParams.set('f.aktualisiert.start',since);u.searchParams.set('format','json');
  if(cursor)u.searchParams.set('cursor',cursor);
- const p=JSON.parse(await fetchOfficial(u.href,{Authorization:`ApiKey ${process.env.DIP_API_KEY}`}));
+ const p=JSON.parse(await fetchOfficial(u.href,{Authorization:`ApiKey ${process.env.DIP_API_KEY}`},maxBytes));
  if(!Array.isArray(p.documents))throw new Error('Unerwartetes DIP-Format');
  onPage(p.documents);
  if(!p.documents.length||!p.cursor||p.cursor===cursor)return;
@@ -55,7 +59,7 @@ export function mapCommitteePosition(d:any):DocumentInput|null{
  return {externalId:String(d.id),title:clean(d.titel),url:d.vorgang_id?`https://dip.bundestag.de/vorgang/${d.vorgang_id}`:`https://dip.bundestag.de/vorgangsposition/${d.id}`,
  text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(f.drucksachetyp??d.dokumentart??'Vorgangsposition'),step:d.vorgangsposition?clean(d.vorgangsposition):null,
  procedure:d.vorgangstyp?clean(d.vorgangstyp):null,documentNumber:f.dokumentnummer?clean(f.dokumentnummer):null,pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
- committees:[...new Set(referrals.map(r=>r.id))],lead:referrals.find(r=>r.lead)?.id??null,ministries:[],
+ committees:[...new Set(referrals.map(r=>r.id))],lead:referrals.find(r=>r.lead)?.id??null,ministries:[],topics:scanTopics(clean(d.titel)),
  originator:(Array.isArray(f.urheber)?f.urheber:[]).map((u:unknown)=>clean(u)).join(', ')||null};
 }
 export async function committeeDocuments(since:string):Promise<DocumentInput[]>{
@@ -63,20 +67,26 @@ export async function committeeDocuments(since:string):Promise<DocumentInput[]>{
  await dipPages('vorgangsposition',since,page=>{for(const d of page){const m=mapCommitteePosition(d);if(m)docs.push(m);}});
  return docs;
 }
-// Drucksachen, deren amtliches Urheberfeld eines der kuratierten Ressorts nennt.
-export function mapMinistryDrucksache(d:any):DocumentInput|null{
- const f=d?.fundstelle??{};
+// Volltextsuche ueber alle Drucksachen der Wahlperiode. Behalten wird, was eines der TRUMPF-Themen
+// nachweislich erwaehnt oder aus einem der ausgewaehlten Ressorts stammt. Der Volltext macht den
+// Unterschied: ein Dual-Use-Bezug steht selten im Titel.
+export function mapFulltextDrucksache(d:any):DocumentInput|null{
+ if(!d?.id||!d?.titel)return null;
+ const f=d.fundstelle??{};
  const originators:string[]=(Array.isArray(f.urheber)?f.urheber:[]).map((u:unknown)=>clean(u));
  const hit=MINISTRIES.filter(m=>originators.some(o=>m.match.some(x=>o.toLowerCase().includes(x))));
- if(!hit.length||!d?.id||!d?.titel)return null;
- return {externalId:String(d.id),title:clean(d.titel),url:`https://dip.bundestag.de/drucksache/${d.id}`,
- text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(d.drucksachetyp??d.dokumentart??'Drucksache'),step:null,procedure:null,
- documentNumber:d.dokumentnummer?clean(d.dokumentnummer):null,pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
- committees:[],lead:null,ministries:hit.map(m=>m.id),originator:originators.join(', ')||null};
+ const title=clean(d.titel);
+ const topics=scanTopics(title,typeof d.text==='string'?d.text:'');
+ if(!hit.length&&!topics.length)return null;
+ return {externalId:String(d.id),title,url:`https://dip.bundestag.de/drucksache/${d.id}`,
+ text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(d.drucksachetyp??d.dokumentart??'Drucksache'),
+ step:null,procedure:null,documentNumber:d.dokumentnummer?clean(d.dokumentnummer):null,
+ pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
+ committees:[],lead:null,ministries:hit.map(m=>m.id),originator:originators.join(', ')||null,topics};
 }
-export async function ministryDocuments(since:string):Promise<DocumentInput[]>{
+export async function fulltextDocuments(since:string):Promise<DocumentInput[]>{
  const docs:DocumentInput[]=[];
- await dipPages('drucksache',since,page=>{for(const d of page){const m=mapMinistryDrucksache(d);if(m)docs.push(m);}});
+ await dipPages('drucksache-text',since,page=>{for(const d of page){const m=mapFulltextDrucksache(d);if(m)docs.push(m);}},FULLTEXT_LIMIT);
  return docs;
 }
 const FILTERLIST='https://www.bundestag.de/ajax/filterlist/de/ausschuesse/';
@@ -103,7 +113,7 @@ export async function agendaDocuments():Promise<DocumentInput[]>{
  const url=`${FILTERLIST}1061622-1061622?offset=0&limit=50&noFilterSet=true`;
  return parseAgendaTable(await fetchOfficial(url),url).flatMap(row=>{
  const id=matchCommitteeName(row.committee);
- return id?[{externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,updatedAt:row.date,documentType:'Tagesordnung',step:'Sitzungstermin',
+ return id?[{externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,updatedAt:row.date,topics:scanTopics(row.title),documentType:'Tagesordnung',step:'Sitzungstermin',
  procedure:null,documentNumber:null,pdfUrl:row.url.endsWith('.pdf')?row.url:null,committees:[id],lead:id,ministries:[],originator:null}]:[];
  });
 }
@@ -117,7 +127,7 @@ export async function eventDocuments(warn?:(note:string)=>void):Promise<Document
  try{
  const rows=parseCommitteeEvents(await fetchOfficial(url),url);
  if(!rows.length)throw new Error('keine Einträge im erwarteten Format');
- for(const row of rows)docs.push({externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,updatedAt:row.date,
+ for(const row of rows)docs.push({externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,updatedAt:row.date,topics:scanTopics(row.title),
  documentType:'Ausschusstermin',step:'Anhörung oder Sitzung',procedure:null,documentNumber:null,pdfUrl:null,
  committees:[c.id],lead:c.id,ministries:[],originator:c.name});
  }catch(e){failed.push(`${c.short}: ${e instanceof Error?e.message:'Abruf fehlgeschlagen'}`);}
@@ -129,7 +139,7 @@ export async function eventDocuments(warn?:(note:string)=>void):Promise<Document
 }
 export async function ingest(source:Source,since:string,warn?:(note:string)=>void):Promise<DocumentInput[]>{
  if(source.kind==='committee-dip')return committeeDocuments(since);
- if(source.kind==='ministry-dip')return ministryDocuments(since);
+ if(source.kind==='fulltext-dip')return fulltextDocuments(since);
  if(source.kind==='committee-agenda')return agendaDocuments();
  if(source.kind==='committee-events')return eventDocuments(warn);
  if(source.kind==='rss'&&source.feed)return parseFeed(await fetchOfficial(source.feed),source.feed);

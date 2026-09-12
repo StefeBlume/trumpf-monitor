@@ -1,3 +1,4 @@
+import type {TopicMatch} from './server/topics';
 export interface Committee {id:string; name:string; short:string; kuerzel:string[]; institution:'Bundestag'|'Bundesrat'; scope:string; leadOnly:boolean; events?:string;}
 // events: Pfad der amtlichen Termin- bzw. Anhörungsliste des Ausschusses hinter /ajax/filterlist/de/ausschuesse/.
 // Die Benennung ist je Ausschuss unterschiedlich (Anhoerungen / anhoerungen / sitzungen); der Auswärtige Ausschuss
@@ -35,7 +36,7 @@ export const MINISTRIES:Ministry[] = [
 export const committeeById=(id:string)=>COMMITTEES.find(c=>c.id===id);
 export const committeeByKuerzel=(k:string)=>COMMITTEES.find(c=>c.kuerzel.includes(k));
 export type Change = 'baseline'|'new'|'changed'|'unchanged';
-export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'ministry-dip'|'committee-agenda'|'committee-events'|'rss'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number;}
+export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'fulltext-dip'|'committee-agenda'|'committee-events'|'rss'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number;}
 export interface DocumentInput {
  externalId:string; title:string; url:string; text:string; publishedAt:string|null;      // Datum des Dokuments bzw. des Termins
  updatedAt:string|null;        // Zeitpunkt der letzten Bewegung laut Quelle; treibt die Sortierung
@@ -48,6 +49,7 @@ export interface DocumentInput {
  lead:string|null;             // id des federführenden Ausschusses
  ministries:string[];          // ids aus MINISTRIES
  originator:string|null;       // Urheber laut Fundstelle
+ topics:TopicMatch[];          // Fundstellen der TRUMPF-Themen, mit Beleg
 }
 export interface Item extends DocumentInput {id:string; sourceId:string; institution:string; hash:string; version:number; change:Change; firstSeen:string; lastSeen:string; changedAt:string; archived:boolean;}
 export interface Event {id:string; itemId:string; title:string; at:string; change:Change; sourceId:string; version:number;}
@@ -55,7 +57,7 @@ export interface Briefing {id:string; createdAt:string; day:string; baseline:boo
 export interface Dashboard {items:Item[]; sources:Source[]; briefings:Briefing[]; events:Event[]; serverTime:string; scheduleEnabled:boolean;}
 export const SOURCES:Source[] = [
  {id:'dip-committees',name:'Überweisungen und Beratungsschritte',institution:'Bundestag / Bundesrat',url:'https://dip.bundestag.de/',kind:'committee-dip',env:'DIP_API_KEY',note:'DIP-Vorgangspositionen, gefiltert auf die ausgewählten Ausschüsse. Erfasst Metadaten und Drucksachenlinks, keine PDF-Volltexte.'},
- {id:'dip-ministries',name:'Drucksachen der ausgewählten Ressorts',institution:'Bundesregierung',url:'https://dip.bundestag.de/',kind:'ministry-dip',env:'DIP_API_KEY',note:'DIP-Drucksachen, gefiltert auf das amtliche Urheberfeld der ausgewählten Ministerien. Referentenentwürfe vor der Zuleitung sind nicht enthalten.'},
+ {id:'dip-drucksachen',name:'Volltextsuche in allen Drucksachen',institution:'Bundestag / Bundesrat',url:'https://dip.bundestag.de/',kind:'fulltext-dip',env:'DIP_API_KEY',note:'Durchsucht die Volltexte aller Drucksachen der Wahlperiode nach den TRUMPF-Themen und behält zusätzlich alles aus den ausgewählten Ressorts. Nicht jede Drucksache führt einen Volltext mit.'},
  {id:'bt-events',name:'Anhörungen und öffentliche Sitzungen',institution:'Bundestag',url:'https://www.bundestag.de/ausschuesse',kind:'committee-events',note:'Amtliche Termin- und Anhörungslisten der ausgewählten Ausschüsse. Der Auswärtige Ausschuss tagt überwiegend nicht öffentlich und führt keine solche Liste.'},
  {id:'bt-agenda',name:'Tagesordnungen der ausgewählten Ausschüsse',institution:'Bundestag',url:'https://www.bundestag.de/ausschuesse',kind:'committee-agenda',note:'Amtliche Tagesordnungsliste mit Ausschussspalte. Der frühere RSS-Feed war auf 15 Einträge über alle Ausschüsse gedeckelt.'},
  {id:'bafa',name:'Exportkontrolle und Außenwirtschaft',institution:'BAFA',url:'https://www.bafa.de/',feed:'https://www.bafa.de/DE/Service/RSSNewsfeed/_functions/rssnewsfeed.xml',env:'BAFA_FEED_URL',kind:'rss',note:'Allgemeiner amtlicher BAFA-Newsfeed. Kein Ausschussbezug und kein vollständiges Merkblatt-Monitoring.'}

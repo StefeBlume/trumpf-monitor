@@ -1,12 +1,34 @@
 # TRUMPF Policy Monitor
 
-Zeigt an, was in ausgewählten Bundestags- und Bundesratsausschüssen sowie ausgewählten Ressorts an neuen amtlichen Papieren eingegangen ist — mit Drucksachennummer, Verfahrensschritt und Link auf das amtliche PDF.
+Durchsucht amtliche Drucksachen im Volltext nach den Themen von TRUMPF SE + Co. KG und zeigt die Treffer mit Fundstelle, Drucksachennummer und Link auf das amtliche PDF. Zusätzlich überwacht die App ausgewählte Ausschüsse und Ressorts auf neue Papiere und kommende Anhörungen.
 
-**Die App bewertet nicht.** Es gibt keinen Relevanzscore, keine Priorisierung, keine Triage und keine KI-Zusammenfassung. Die einzige inhaltliche Entscheidung ist die Auswahl der Gremien. Was dort eingeht, wird unverändert angezeigt.
+**Die App bewertet nicht.** Es gibt keinen Relevanzscore, keine Priorisierung, keine Triage und keine KI-Zusammenfassung. Ein Thementreffer ist eine Fundstelle: die App nennt den Begriff, zählt seine Vorkommen, vermerkt ob er im Titel steht, und zeigt den Satz drumherum. Ob der Fund etwas bedeutet, entscheidet die Lektüre.
+
+## Die Themen
+
+Das Raster in `src/server/topics.ts` folgt dem Geschäft von TRUMPF: Familienunternehmen seit 1923 in Ditzingen, rund 18.000 Beschäftigte, Werkzeugmaschinen und Lasertechnik, Leistungselektronik, additive Fertigung — und als weltweit einziger Lieferant der Laserverstärker für die EUV-Lithografie unmittelbar an der Halbleiterfertigung beteiligt.
+
+| Thema | Warum |
+|---|---|
+| Export & Dual-Use | Ausfuhrrecht und Güterlisten entscheiden über Lieferwege |
+| Halbleiter & EUV | Laserverstärker für die EUV-Lithografie |
+| Lasertechnik & Photonik | Kerngeschäft samt Laserschutzrecht |
+| Werkzeugmaschinen & Fertigung | Zweites Kerngeschäft, Maschinen- und Produktsicherheitsrecht |
+| Industrielle KI | KI in Fertigung und Maschinensteuerung |
+| Hochtechnologie & Förderung | Forschungsförderung und Schlüsseltechnologien |
+| Wirtschaftsstandort Deutschland | Energiepreise, Bürokratie, Fachkräfte |
+| Lieferketten & Rohstoffe | Seltene Erden, Vorprodukte, Zölle |
+| Familienunternehmen & Mittelstand | Erbschaft- und Unternehmensteuer |
+
+**Wie gesucht wird.** Begriffe werden mit eigenen Wortgrenzen gesucht, weil `\b` bei Umlauten unzuverlässig ist. Deutsche Beugung wird berücksichtigt, auch mitten in Mehrwortbegriffen („seltene Erden" findet „seltenen Erden"), und zwischen den Wörtern steht `\s+`, damit ein Zeilenumbruch aus dem PDF-Volltext nicht trennt. Abkürzungen wie `AWG`, `AWV` oder `EUV` treffen nur in Großschreibung, sonst würden sie Silben in fremden Wörtern erwischen.
+
+**Kontextbedingung.** Zu breite Begriffe zählen nur, wenn im selben Dokument auch ein Fertigungs- oder Industriebegriff steht. „Künstliche Intelligenz" allein trifft sonst KI-generierte Musik, „Bürokratieabbau" das Vereinssteuerrecht. Beide Fundstellen werden als Beleg angezeigt.
+
+**Reihenfolge.** Sortiert wird nach Fundstellen im Titel, dann nach Zahl der berührten Themen, dann nach Häufigkeit — alles drei abzählbare Eigenschaften des Textes, keine Gewichtung.
 
 ## Die Auswahl
 
-Überwacht werden 11 Bundestags- und 5 Bundesratsausschüsse sowie 4 Ressorts (siehe `src/model.ts`, sichtbar in der App unter „Ausschüsse"). Nicht ausgewählt sind unter anderem Inneres, Verkehr, Gesundheit, Landwirtschaft, Kultur, Bau und Wohnen, Familie und Menschenrechte.
+Neben der Volltextsuche überwacht die App gezielt 11 Bundestags- und 5 Bundesratsausschüsse sowie 4 Ressorts (siehe `src/model.ts`, sichtbar in der App unter „Ausschüsse"). Nicht ausgewählt sind unter anderem Inneres, Verkehr, Gesundheit, Landwirtschaft, Kultur, Bau und Wohnen, Familie und Menschenrechte.
 
 **Regel `leadOnly`:** Querschnittsausschüsse — Finanzen, Haushalt, Recht, Arbeit und Soziales, EU sowie sämtliche Bundesratsausschüsse — werden nahezu jeder Vorlage mitberatend zugewiesen. Dort zählt nur die Federführung. Fachlich eng zugeschnittene Ausschüsse (Wirtschaft und Energie, Forschung und Technologie, Auswärtiges, Digitales, Umwelt, Verteidigung) zählen auch mitberatend. Ohne diese Regel steigt das Rauschen im 14-Tage-Fenster von 30 auf 41 Dokumente, überwiegend durch Routine-Mitberatungen im Bundesrat.
 
@@ -17,7 +39,7 @@ Auswahl und Regel ändern: `COMMITTEES` und `MINISTRIES` in `src/model.ts`. Die 
 | Quelle | Abruf | Filter |
 |---|---|---|
 | DIP `vorgangsposition` | API | `ueberweisung[].ausschuss_kuerzel` gegen die Auswahl, `leadOnly` beachtet |
-| DIP `drucksache` | API | amtliches Urheberfeld `fundstelle.urheber` gegen die Ressortauswahl |
+| DIP `drucksache-text` | API | Volltext aller Drucksachen gegen das Themenraster; zusätzlich alles aus den ausgewählten Ressorts |
 | Anhörungen und öffentliche Sitzungen | Terminlisten der Ausschüsse | je ausgewähltem Bundestagsausschuss eine eigene amtliche Liste |
 | Tagesordnungen | ausschussübergreifende Liste | Ausschussspalte gegen die Bundestagsauswahl |
 | BAFA-Newsfeed | RSS | ungefiltert, ohne Gremienbezug |
@@ -67,7 +89,8 @@ Ein Erstimport ist kein Fund. Die Zusammenfassung sagt das ausdrücklich.
 ## Grenzen
 
 - **Referentenentwürfe vor der Zuleitung an das Parlament sind nicht erfasst.** Ministerien werden über das Urheberfeld amtlicher Drucksachen erkannt, nicht über Pressemitteilungen oder Verbändeanhörungen. Für die frühe Phase existiert keine maschinell zuverlässige amtliche Schnittstelle.
-- **Keine PDF-Volltexte.** Erfasst werden Metadaten und der Link; der Inhalt der Drucksachen wird nicht ausgewertet.
+- **Nicht jede Drucksache führt einen Volltext.** Wo die Quelle keinen Text liefert, wird nur der Titel durchsucht. Für Ausschusstermine, Tagesordnungen und den BAFA-Feed gibt es ohnehin nur Titel.
+- **Ein Thementreffer ist kein Sachzusammenhang.** Die Suche findet Begriffe, nicht Bedeutung. Ein Dokument über Vereinssteuerrecht kann „Bürokratieabbau" im Titel führen und erscheint dann zu Recht in der Liste — die Einschätzung bleibt bei der Leserin.
 - **Der BAFA-Feed liefert kein Veröffentlichungsdatum.** Die App zeigt dort „Kein Datum in der Quelle" statt ein Datum aus der URL zu raten.
 - **Der Auswärtige Ausschuss führt keine öffentliche Terminliste.** Er tagt überwiegend nicht öffentlich; seine Sitzungen erscheinen nur über die Tagesordnungsliste.
 - **Die Datenbank wächst unbegrenzt.** Erfasste Dokumente werden nicht automatisch entfernt. Bei Bedarf `data/monitor.db` und `public/bootstrap.json` löschen; der nächste Lauf legt einen frischen Ausgangsstand an.
@@ -102,6 +125,8 @@ NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
 npm test
 ```
 
-37 Tests in zwei Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+46 Tests in drei Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+
+`tests/topics.test.ts` deckt die Themensuche ab: Stimmigkeit des Rasters, Erkennung aller TRUMPF-Kernthemen, Abkürzungen nur in Großschreibung, industrieller Kontext für KI und die breiten Standortbegriffe, deutsche Beugung samt Zeilenumbruch, Zählung und Titelvermerk, Reihenfolge und die Belegqualität.
 
 `tests/hardening.test.ts` deckt die Randfälle ab, die im Audit aufgefallen sind: fremde Adressen aus fremdem Markup, unsichtbare Trennzeichen, Formatbrüche gegen legitime Leerergebnisse, keine Wiederholung dauerhafter Fehler, Datumsüberlauf (der 31. Februar wurde zum 3. März), Namensabgleich über alle 24 echten Ausschussbezeichnungen, Aufbewahrung, sichtbare Teilausfälle und unvollständige API-Antworten.
