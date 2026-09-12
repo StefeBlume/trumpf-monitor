@@ -6,14 +6,23 @@
 //
 // Ein Treffer ist eine Fundstelle, keine Bewertung: die App zeigt den gefundenen Begriff und
 // seinen Satzzusammenhang und überlässt die Einschätzung der Leserin.
-export interface Topic {id:string; label:string; why:string; terms:string[]; strict?:string[]; context?:{terms:string[]; with:string[]};}
+export interface Topic {id:string; label:string; why:string; terms:string[]; strict?:string[]; context?:{terms:string[]; with:string[]}; ignore?:RegExp[];}
 // context: Begriffe, die fuer sich genommen zu breit sind. Sie zaehlen nur, wenn im selben Dokument
 // auch ein Begriff aus "with" vorkommt. "Kuenstliche Intelligenz" trifft sonst KI-generierte Musik,
 // "Buerokratieabbau" das Vereinssteuerrecht. Beide Fundstellen werden als Beleg angezeigt.
+// Jeder Gesetzentwurf muss die Kosten fuer die Wirtschaft darstellen und dabei mittelstaendische
+// Unternehmen nennen: "Weitere Kosten ... Der Wirtschaft, einschliesslich mittelstaendischer Unternehmen,
+// entstehen keine". Gezaehlt als Mittelstand-Fundstelle machte der Pflichtsatz 4 von 16 Treffern aus -
+// darunter das Einkommensteuerreformgesetz. Ausgeklammert wird nur ein Satz, der zugleich den
+// Mittelstand und eine der drei Formen der Kostenformel enthaelt; "Energiekosten belasten den
+// Mittelstand" bleibt ein Treffer. Am Volltext von 265 Drucksachen geprueft: alle sechs
+// ausgeklammerten Saetze waren reine Kostenformeln.
+const KOSTEN='(?:Weitere\\s+Kosten|Kosten\\s+für\\s+die\\s+Wirtschaft|entstehen[^.!?]*\\bkeine\\b[^.!?]*Kosten)';
+const KOSTENFORMEL=new RegExp(`[^.!?]*${KOSTEN}[^.!?]*mittelst[äa]ndisch[^.!?]*[.!?]?|[^.!?]*mittelst[äa]ndisch[^.!?]*${KOSTEN}[^.!?]*[.!?]?`,'gi');
 export const TOPICS:Topic[] = [
  {id:'dualuse',label:'Export & Dual-Use',why:'Ausfuhrrecht und Güterlisten entscheiden, was TRUMPF wohin liefern darf.',
-  terms:['dual-use','dual use','ausfuhrkontrolle','exportkontrolle','ausfuhrgenehmigung','außenwirtschaftsgesetz','außenwirtschaftsverordnung','güterliste','rüstungsexport','embargo','sanktionsregime','investitionsprüfung','technologietransfer','wassenaar'],
-  strict:['AWG','AWV','BAFA']},
+  terms:['dual-use','dual use','ausfuhrkontrolle','exportkontrolle','ausfuhrgenehmigung','außenwirtschaftsgesetz','außenwirtschaftsverordnung','güterliste','rüstungsexport','embargo','sanktionsregime','investitionsprüfung','technologietransfer','wassenaar','endverbleib'],
+  strict:['AWG','AWV']},
  {id:'halbleiter',label:'Halbleiter & EUV',why:'TRUMPF liefert die Laserverstärker für die EUV-Lithografie.',
   terms:['halbleiter','mikroelektronik','chipfertigung','chipindustrie','chips act','mikrochip','lithografie','lithographie','semiconductor','waferfertigung','leistungshalbleiter'],
   strict:['EUV']},
@@ -37,7 +46,8 @@ export const TOPICS:Topic[] = [
   terms:['lieferkette','seltene erden','kritische rohstoffe','rohstoffversorgung','versorgungssicherheit','lieferkettensorgfaltspflichten','critical raw materials','handelsabkommen','zollsatz','einfuhrzoll','reach-verordnung','stoffbeschränkung','chemikalienrecht'],
   strict:['PFAS','REACH']},
  {id:'familie',label:'Familienunternehmen & Mittelstand',why:'TRUMPF ist ein Familienunternehmen; Erbschaft- und Unternehmensteuer wirken unmittelbar.',
-  terms:['familienunternehmen','unternehmensnachfolge','erbschaftsteuer','betriebsvermögen','mittelständische unternehmen','thesaurierung','substanzbesteuerung']}
+  terms:['familienunternehmen','unternehmensnachfolge','erbschaftsteuer','betriebsvermögen','mittelständische unternehmen','thesaurierung','substanzbesteuerung'],
+  ignore:[KOSTENFORMEL]}
 ];
 export interface TopicMatch {topic:string; terms:string[]; count:number; inTitle:boolean; snippet:string;}
 const escape=(s:string)=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -79,11 +89,20 @@ export function scanTopics(title:string,body=''):TopicMatch[]{
   if(!kontextOk.has(topic))kontextOk.set(topic,CONTEXT.get(topic)!.some(re=>{re.lastIndex=0;return re.test(full);}));
   return kontextOk.get(topic)!;
  };
+ // Themen mit Ausnahmen durchsuchen einen bereinigten Text; der Titel bleibt unangetastet vorn.
+ const texte=new Map<string,string>();
+ const textFuer=(topic:string)=>{
+  const muster=TOPICS.find(t=>t.id===topic)?.ignore;
+  if(!muster?.length)return full;
+  if(!texte.has(topic))texte.set(topic,`${title}\n${muster.reduce((b,re)=>b.replace(re,' '),body)}`);
+  return texte.get(topic)!;
+ };
  for(const c of COMPILED){
   if(c.needsContext&&!hatKontext(c.topic))continue;
   c.re.lastIndex=0;
   let m:RegExpExecArray|null, first=-1, firstLen=0, imText=-1, imTextLen=0, n=0;
-  while((m=c.re.exec(full))){
+  const text=textFuer(c.topic);
+  while((m=c.re.exec(text))){
    n++;
    const at=m.index+m[1].length, len=m[0].length-m[1].length-(m[2]?m[2].length:0);
    if(first<0){first=at;firstLen=len;}
@@ -96,8 +115,8 @@ export function scanTopics(title:string,body=''):TopicMatch[]{
   const eintrag=byTopic.get(c.topic)??{terms:new Set<string>(),count:0,inTitle:false,snippet:'',ausText:false};
   eintrag.terms.add(c.term); eintrag.count+=n;
   if(first<title.length)eintrag.inTitle=true;
-  if(imText>=0&&!eintrag.ausText){eintrag.snippet=snippetAt(full,imText,imTextLen);eintrag.ausText=true;}
-  else if(!eintrag.snippet)eintrag.snippet=snippetAt(full,first,firstLen);
+  if(imText>=0&&!eintrag.ausText){eintrag.snippet=snippetAt(text,imText,imTextLen);eintrag.ausText=true;}
+  else if(!eintrag.snippet)eintrag.snippet=snippetAt(text,first,firstLen);
   byTopic.set(c.topic,eintrag);
  }
  return [...byTopic].map(([topic,v])=>({topic,terms:[...v.terms],count:v.count,inTitle:v.inTitle,snippet:v.snippet}))

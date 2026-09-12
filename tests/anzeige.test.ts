@@ -204,3 +204,16 @@ test('Das Briefing verschweigt weder Einträge ohne Gremium noch gekürzte Liste
  assert.ok(/!i\.committees\.length&&!i\.ministries\.length\)\.map/.test(seite),'die Gruppe zeigt genau diese Einträge');
  assert.ok(seite.includes('Aufgeführt sind die ersten {briefing.items.length} von {briefing.gesamt} Dokumenten'),'eine gekürzte Liste sagt es');
 });
+
+// Das README behauptete, die Datenbank wachse unbegrenzt und nichts werde entfernt - seit der
+// Zehn-Tage-Regel falsch. Ebenso "ungefiltert" fuer BAFA und "nur Titel" fuer einen Feed mit Beschreibungen.
+test('Das README beschreibt Aufbewahrung und BAFA-Quelle zutreffend',()=>{
+ const readme=readFileSync('README.md','utf8');
+ assert.ok(!readme.includes('Die Datenbank wächst unbegrenzt'),'die Aufbewahrung entfernt Dokumente');
+ assert.ok(readme.includes('`RETENTION_DAYS`, Standard 10'),'die Frist steht im README');
+ assert.ok(!readme.includes('BAFA-Newsfeed | RSS | ungefiltert'),'die Quelle ist auf die Rubrik beschränkt');
+ assert.ok(!readme.includes('den BAFA-Feed gibt es ohnehin nur Titel'),'der Feed führt Beschreibungen');
+ const monitor=readFileSync('src/server/monitor.ts','utf8');
+ assert.match(monitor,/RETENTION_DAYS\?\?10/,'README und Code nennen dieselbe Frist');
+ assert.match(monitor,/ORDER BY rowid DESC LIMIT 60/,'README und Code nennen dieselbe Zahl gespeicherter Briefings');
+});

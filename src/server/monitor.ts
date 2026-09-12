@@ -25,7 +25,7 @@ function sammelpapiere(items:Pick<DocumentInput,'paperKey'|'url'>[]):Set<string>
 // Aendert sich die Auswahl- oder Zuordnungslogik, holt der naechste Lauf das volle Fenster neu. Der
 // Rueckblick nach einem erfolgreichen Lauf reicht nur zwei Tage; was eine fruehere Fassung verworfen
 // oder falsch zusammengefuehrt hat, kaeme sonst nie wieder.
-export const ERFASSUNGSSTAND=2;
+export const ERFASSUNGSSTAND=3;
 const neuer=(a:string|null|undefined,b:string|null|undefined):string|null=>!a?(b??null):!b?a:a>b?a:b;
 export function asItem(raw:unknown):Item{
  const i=raw as Partial<Item>;
@@ -101,8 +101,17 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const sammel=sammelpapiere([...initial.items,...updated,...docs]);
  const baseline=!states.get(source.id)?.checkedAt&&!initial.items.some(i=>i.sourceId===source.id);
  const statements:any[]=[];const sourceUpdates:Item[]=[];
+ const entfernt=new Set((await c.execute({sql:'SELECT external_id FROM entfernt WHERE source_id=?',args:[source.id]})).rows.map(r=>String(r.external_id)));
  for(const doc of new Map(docs.map(d=>[d.externalId,d])).values()){
  if(veraltet(doc))continue;
+ // Einmal abgelaufen, bleibt eine Meldung ohne Datum draussen. Der BAFA-Feed fuehrt Newsletter ein Jahr
+ // lang; ohne diese Pruefung kaemen sie nach jeder Aufbewahrungsfrist als "neu" zurueck.
+ const feedOhneDatum=source.kind==='rss'&&!doc.publishedAt&&!doc.updatedAt;
+ if(feedOhneDatum&&entfernt.has(doc.externalId))continue;
+ // Beim ersten Abruf einer Quelle ist ein Feed ein Archiv: was dort ohne Datum steht, kann Monate alt sein
+ // ("Exportkontrolle Aktuell - Oktober 2025"). Solche Meldungen werden nur vermerkt. Was spaeter neu im
+ // Feed erscheint, ist tatsaechlich neu und kommt herein.
+ if(baseline&&feedOhneDatum){statements.push({sql:'INSERT OR IGNORE INTO entfernt(source_id,external_id,at) VALUES(?,?,?)',args:[source.id,doc.externalId,now]});continue;}
  const itemId=createHash('sha256').update(source.id+'|'+doc.externalId).digest('hex').slice(0,24);
  const zwilling=doc.paperKey&&!sammel.has(doc.paperKey)?jePapier.get(doc.paperKey):undefined;
  const fremderVorgang=!!zwilling&&!!vorgangsId(doc.url)&&!!vorgangsId(zwilling.url)&&vorgangsId(doc.url)!==vorgangsId(zwilling.url);
@@ -196,13 +205,19 @@ export async function prune(days:number,gueltigeQuellen?:string[]):Promise<numbe
   await c.execute({sql:`DELETE FROM items WHERE source_id NOT IN (${gueltigeQuellen.map(()=>'?').join(',')})`,args:gueltigeQuellen});
  // Briefings sammeln sich sonst unbegrenzt an. Ausgeliefert werden ohnehin nur die letzten zwoelf.
  await c.execute('DELETE FROM briefings WHERE rowid NOT IN (SELECT rowid FROM briefings ORDER BY rowid DESC LIMIT 60)');
+ await c.execute({sql:'DELETE FROM entfernt WHERE at<?',args:[new Date(Date.now()-400*86400000).toISOString()]});
  const cutoff=new Date(Date.now()-days*86400000).toISOString();
- const stale=await c.execute({sql:`SELECT id FROM items WHERE json_extract(data,'$.archived')=0
+ const stale=await c.execute({sql:`SELECT id,source_id,json_extract(data,'$.externalId') ext,json_extract(data,'$.publishedAt') pub,json_extract(data,'$.updatedAt') upd FROM items WHERE json_extract(data,'$.archived')=0
   AND COALESCE(json_extract(data,'$.updatedAt'),json_extract(data,'$.publishedAt'),json_extract(data,'$.firstSeen'))<?`,args:[cutoff]});
  const ids=stale.rows.map(r=>String(r.id));
  if(!ids.length)return 0;
  const list=ids.map(()=>'?').join(',');
+ // Meldungen ohne Datum laufen nach dem Erstkontakt ab. Ihr Feed liefert sie weiter; gemerkt wird
+ // deshalb, dass sie schon einmal da waren.
+ const ohneDatum=stale.rows.filter(r=>r.pub==null&&r.upd==null&&r.ext!=null)
+  .map(r=>({sql:'INSERT OR IGNORE INTO entfernt(source_id,external_id,at) VALUES(?,?,?)',args:[String(r.source_id),String(r.ext),new Date().toISOString()]}));
  await c.batch([
+ ...ohneDatum,
  {sql:`DELETE FROM versions WHERE item_id IN (${list})`,args:ids},
  {sql:`DELETE FROM events WHERE json_extract(data,'$.itemId') IN (${list})`,args:ids},
  {sql:`DELETE FROM items WHERE id IN (${list})`,args:ids}

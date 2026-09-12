@@ -37,7 +37,7 @@ export const MINISTRIES:Ministry[] = [
 export const committeeById=(id:string)=>COMMITTEES.find(c=>c.id===id);
 export const committeeByKuerzel=(k:string)=>COMMITTEES.find(c=>c.kuerzel.includes(k));
 export type Change = 'baseline'|'new'|'changed'|'unchanged';
-export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'fulltext-dip'|'committee-agenda'|'committee-events'|'ministry-drafts'|'rss'|'lobby'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number; erfassung?:number;}
+export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'fulltext-dip'|'committee-agenda'|'committee-events'|'ministry-drafts'|'rss'|'lobby'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number; erfassung?:number; pfad?:string;}
 export interface DocumentInput {
  externalId:string; title:string; url:string; text:string; publishedAt:string|null;      // Datum des Dokuments bzw. des Termins
  updatedAt:string|null;        // Zeitpunkt der letzten Bewegung laut Quelle; treibt die Sortierung
@@ -64,5 +64,6 @@ export const SOURCES:Source[] = [
  {id:'bt-agenda',name:'Tagesordnungen der ausgewählten Ausschüsse',institution:'Bundestag',url:'https://www.bundestag.de/ausschuesse',kind:'committee-agenda',note:'Amtliche Tagesordnungsliste mit Ausschussspalte. Der frühere RSS-Feed war auf 15 Einträge über alle Ausschüsse gedeckelt.'},
  {id:'bmf-vorhaben',name:'Gesetzesvorhaben des BMF',institution:'BMF',url:'https://www.bundesfinanzministerium.de/Web/DE/Service/Gesetze_Gesetzesvorhaben/Gesetze_Gesetzgebungsvorhaben.html',kind:'ministry-drafts',note:'Aus der amtlichen Sitemap, die laut robots.txt für Maschinen ausgewiesen ist: Adresse und Änderungsdatum. Die Inhaltsseiten leiten auf den Bot-Schutz Radware um und sind aus dem Zeitplan nicht abrufbar — deshalb steht hier das amtliche Kürzel statt des vollen Titels. Im Browser öffnet der Link die richtige Seite.'},
  {id:'lobbyregister',name:'Interessenvertretung zu den Themen',institution:'Lobbyregister',url:'https://www.lobbyregister.bundestag.de/',kind:'lobby',note:'Amtliches Lobbyregister des Bundestags, je Thema eine eigene Abfrage. Zeigt, wer sich registriert hat — nicht, wer tatsächlich Einfluss nimmt.'},
- {id:'bafa',name:'Exportkontrolle und Außenwirtschaft',institution:'BAFA',url:'https://www.bafa.de/',feed:'https://www.bafa.de/DE/Service/RSSNewsfeed/_functions/rssnewsfeed.xml',env:'BAFA_FEED_URL',kind:'rss',note:'Allgemeiner amtlicher BAFA-Newsfeed. Kein Ausschussbezug und kein vollständiges Merkblatt-Monitoring.'}
+ // Neue Kennung: die Bereinigung verwaister Quellen raeumt die Energie-Meldungen des allgemeinen Feeds sofort ab.
+ {id:'bafa-aussenwirtschaft',name:'Exportkontrolle und Außenwirtschaft',institution:'BAFA',url:'https://www.bafa.de/DE/Aussenwirtschaft/aussenwirtschaft_node.html',feed:'https://www.bafa.de/DE/Service/RSSNewsfeed/_functions/rssnewsfeed_aussenwirtschaft.xml',pfad:'/Aussenwirtschaft/',env:'BAFA_FEED_URL',kind:'rss',note:'Amtlicher BAFA-Feed der Rubrik Außenwirtschaft, beschränkt auf deren Adressen. Das Datum steht nur im Dateinamen der Kurzmeldungen; Newsletter tragen keins.'}
 ];

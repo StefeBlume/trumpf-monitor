@@ -152,13 +152,32 @@ export async function eventDocuments(warn?:(note:string)=>void):Promise<Document
  if(failed.length)warn?.(`${failed.length} von ${withEvents.length} Terminlisten nicht lesbar: ${failed.join('; ')}`);
  return docs;
 }
+// Die BAFA-Feeds fuehren kein Datum. Ihre Kurzmeldungen tragen es im Dateinamen, im Format des Amtes:
+// .../Ausfuhrkontrolle/20260901_eu-dual-use-vo_evaluation_erinnerung.html. Uebernommen wird nur ein
+// vollstaendiges, gueltiges Datum. Ohne Datum stuenden Meldungen aus dem Oktober 2025 zehn Tage lang
+// als aktuell im Lagebild; Newsletter wie EKA_2026_07 bleiben ehrlich ohne.
+export function datumAusAdresse(url:string):string|null{
+ const m=/\/(20\d{2})(\d{2})(\d{2})_[^/]*$/.exec(url??'');
+ if(!m)return null;
+ const [j,mo,t]=[Number(m[1]),Number(m[2]),Number(m[3])];
+ const d=new Date(Date.UTC(j,mo-1,t));
+ return d.getUTCFullYear()===j&&d.getUTCMonth()===mo-1&&d.getUTCDate()===t?d.toISOString():null;
+}
+// Der allgemeine BAFA-Feed brachte E-Auto-Foerderung und Energietag in eine Quelle namens
+// "Exportkontrolle und Aussenwirtschaft". Auch der Rubrikfeed enthaelt Fremdes ("Foerderkompass" unter
+// /Bundesamt/). Uebernommen wird deshalb nur, was unter dem Pfad der Quelle liegt.
+export function rssNachbereiten(docs:DocumentInput[],source:Pick<Source,'pfad'>):DocumentInput[]{
+ return docs
+  .filter(d=>{if(!source.pfad)return true;try{return new URL(d.url).pathname.includes(source.pfad);}catch{return false;}})
+  .map(d=>{if(d.publishedAt||d.updatedAt)return d;const datum=datumAusAdresse(d.url);return datum?{...d,publishedAt:datum,updatedAt:datum}:d;});
+}
 export async function ingest(source:Source,since:string,warn?:(note:string)=>void):Promise<DocumentInput[]>{
  if(source.kind==='committee-dip')return committeeDocuments(since);
  if(source.kind==='fulltext-dip')return fulltextDocuments(since);
  if(source.kind==='committee-agenda')return agendaDocuments();
  if(source.kind==='committee-events')return eventDocuments(warn);
  if(source.kind==='ministry-drafts')return ministryDrafts();
- if(source.kind==='rss'&&source.feed)return parseFeed(await fetchOfficial(source.feed),source.feed);
+ if(source.kind==='rss'&&source.feed)return rssNachbereiten(parseFeed(await fetchOfficial(source.feed),source.feed),source);
  throw new Error('Manuelle Ergänzung erforderlich');
 }
 

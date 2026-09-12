@@ -44,7 +44,7 @@ Auswahl und Regel ändern: `COMMITTEES` und `MINISTRIES` in `src/model.ts`. Die 
 | Tagesordnungen | ausschussübergreifende Liste | Ausschussspalte gegen die Bundestagsauswahl |
 | BMF-Sitemap | XML | Gesetzesvorhaben des Bundesfinanzministeriums mit Änderungsdatum |
 | Lobbyregister | JSON-API | je Thema eine Abfrage; aufgeführt wird, wer mindestens zwei Themen berührt |
-| BAFA-Newsfeed | RSS | ungefiltert, ohne Gremienbezug |
+| BAFA-Feed Außenwirtschaft | RSS | nur Adressen unter `/Aussenwirtschaft/`; ohne Gremienbezug |
 
 Die Termin- und Tagesordnungslisten sind HTML-Listen der Ausschussseiten, keine dokumentierte Schnittstelle. Bricht das CMS die Struktur, meldet die Terminquelle einen Fehler, statt still nichts zu liefern. Der frühere RSS-Feed war auf 15 Einträge über alle Ausschüsse gedeckelt und lieferte deshalb nur einen Bruchteil der Termine.
 
@@ -95,11 +95,11 @@ Ein Erstimport ist kein Fund. Die Zusammenfassung sagt das ausdrücklich.
 ## Grenzen
 
 - **Referentenentwürfe vor der Zuleitung an das Parlament sind nicht erfasst.** Ministerien werden über das Urheberfeld amtlicher Drucksachen erkannt, nicht über Pressemitteilungen oder Verbändeanhörungen. Für die frühe Phase existiert keine maschinell zuverlässige amtliche Schnittstelle.
-- **Nicht jede Drucksache führt einen Volltext.** Wo die Quelle keinen Text liefert, wird nur der Titel durchsucht. Für Ausschusstermine, Tagesordnungen und den BAFA-Feed gibt es ohnehin nur Titel.
+- **Nicht jede Drucksache führt einen Volltext.** Wo die Quelle keinen Text liefert, wird nur der Titel durchsucht. Für Ausschusstermine und Tagesordnungen gibt es ohnehin nur Titel; der BAFA-Feed führt meist eine kurze Beschreibung.
 - **Ein Thementreffer ist kein Sachzusammenhang.** Die Suche findet Begriffe, nicht Bedeutung. Ein Dokument über Vereinssteuerrecht kann „Bürokratieabbau" im Titel führen und erscheint dann zu Recht in der Liste — die Einschätzung bleibt bei der Leserin.
-- **Der BAFA-Feed liefert kein Veröffentlichungsdatum.** Die App zeigt dort „Kein Datum in der Quelle" statt ein Datum aus der URL zu raten.
+- **Der BAFA-Feed liefert kein Veröffentlichungsdatum.** Die Kurzmeldungen tragen es aber vollständig im Dateinamen (`20260901_…`); dieses Datum übernimmt die App, ein unvollständiges oder ungültiges nicht. Newsletter bleiben ohne Datum. Beim ersten Abruf eines Feeds gilt sein Inhalt als Archiv: Meldungen ohne Datum werden nur vermerkt, nicht angezeigt. Was später neu im Feed erscheint, kommt herein und läuft zehn Tage nach dem Erstkontakt ab; der Feed führt sie weiter, sie kommen aber nicht erneut als neu herein.
 - **Der Auswärtige Ausschuss führt keine öffentliche Terminliste.** Er tagt überwiegend nicht öffentlich; seine Sitzungen erscheinen nur über die Tagesordnungsliste.
-- **Die Datenbank wächst unbegrenzt.** Erfasste Dokumente werden nicht automatisch entfernt. Bei Bedarf `data/monitor.db` und `public/bootstrap.json` löschen; der nächste Lauf legt einen frischen Ausgangsstand an.
+- **Aufbewahrung zehn Tage.** Jeder Lauf entfernt Dokumente, deren letzte Bewegung laut Quelle länger zurückliegt (`RETENTION_DAYS`, Standard 10); ohne Quellendatum zählt der Erstkontakt. Künftige Termine bleiben bis nach ihrem Datum. Von den Briefings bleiben die letzten 60 gespeichert, ausgeliefert werden zwölf.
 - **EUR-Lex und Have Your Say sind nicht angebunden.** Beides liegt außerhalb der Ausschuss- und Ressortauswahl; EU-Vorlagen erscheinen nur, soweit sie an einen ausgewählten Ausschuss überwiesen wurden.
 - **Keine Meldung ist kein Entwarnungsnachweis.** Die Anzeige gilt nur für die ausgewählten Gremien und die erfolgreich abgerufenen Quellen. Fehlgeschlagene Abrufe werden pro Quelle mit Fehlertext ausgewiesen.
 

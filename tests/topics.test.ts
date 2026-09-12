@@ -99,3 +99,26 @@ test('Beleg nennt Begriff und Zusammenhang, nicht nur ein Etikett',()=>{
 test('Leerer Text liefert keine Treffer',()=>{
  for(const leer of ['','   ','\n'])assert.deepEqual(scanTopics(leer,''),[]);
 });
+
+// Jeder Gesetzentwurf muss die Kosten fuer die Wirtschaft "einschliesslich mittelstaendischer Unternehmen"
+// darstellen. Der Pflichtsatz machte 4 von 16 Mittelstand-Treffern aus, darunter das
+// Einkommensteuerreformgesetz.
+test('Die Kostenformel eines Gesetzentwurfs ist keine Mittelstand-Fundstelle',()=>{
+ const familie=(text:string)=>scanTopics('Entwurf eines Gesetzes',text).some(m=>m.topic==='familie');
+ assert.equal(familie('F. Weitere Kosten Der Wirtschaft, einschließlich mittelständischer Unternehmen, entstehen keine direkten sonstigen Kosten.'),false);
+ assert.equal(familie('Weitere direkte oder indirekte Kosten für die Wirtschaft und insbesondere für mittelständische Unternehmen sind nicht zu erwarten.'),false);
+ assert.equal(familie('Unternehmen, insbesondere kleinen und mittelständischen Unternehmen, entstehen durch dieses Gesetz keine unmittelbaren direkten Kosten.'),false);
+ assert.equal(familie('Die hohen Energiekosten belasten mittelständische Unternehmen besonders.'),true,'eine inhaltliche Aussage bleibt ein Treffer');
+ assert.equal(familie('F. Weitere Kosten Keine. Die Reform stärkt mittelständische Unternehmen bei der Nachfolge.'),true,'nur der Formelsatz fällt weg, nicht das ganze Dokument');
+ assert.equal(familie('Die Erbschaftsteuer für Familienunternehmen wird reformiert.'),true);
+});
+
+// Das BAFA verwaltet auch Energie- und Wirtschaftsfoerderung sowie das Lieferkettengesetz. Als Dual-Use-
+// Begriff machte "BAFA" den "BAFA Energietag" und 11 von 16 Meldungen zum Lieferkettengesetz zu Treffern.
+test('Die Behörde allein ist kein Exportkontroll-Thema',()=>{
+ const dual=(t:string,b='')=>scanTopics(t,b).some(m=>m.topic==='dualuse');
+ assert.equal(dual('BAFA Energietag 2026 – Letzte Chance zur Anmeldung!'),false);
+ assert.equal(dual('Lieferkettensorgfaltspflichtengesetz: Das BAFA veröffentlicht eine Handreichung'),false);
+ assert.equal(dual('Anpassung der Muster zu Endverbleibserklärungen für Ausfuhren'),true,'der Endverbleib ist Exportkontrolle');
+ assert.equal(dual('Änderung des AWG'),true,'Abkürzungen des Außenwirtschaftsrechts bleiben');
+});

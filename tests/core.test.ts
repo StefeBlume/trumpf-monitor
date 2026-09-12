@@ -1,7 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {parseFeed,contentHash,officialURL,germanDate,parseCommitteeEvents,parseAgendaTable} from '../src/server/parsing';
-import {mapCommitteePosition,mapFulltextDrucksache,matchCommitteeName,lookbackStart} from '../src/server/connectors';
+import {mapCommitteePosition,mapFulltextDrucksache,matchCommitteeName,lookbackStart,datumAusAdresse,rssNachbereiten} from '../src/server/connectors';
 import {berlinClock,runMonitor,dashboard,history,briefingSummary,seedFromSnapshot} from '../src/server/monitor';
 import {resetDBForTests} from '../src/server/db';import {COMMITTEES,MINISTRIES,type DocumentInput,type Item,type Source} from '../src/model';
 const doc:DocumentInput={externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',url:'https://www.bundestag.de/test',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',step:'Gesetzentwurf',procedure:'Gesetzgebung',documentNumber:'21/1234',pdfUrl:null,committees:['we'],lead:'we',ministries:[],originator:'Bundesregierung',topics:[]};
@@ -535,4 +535,70 @@ test('Eingearbeitete Angaben der anderen Quelle zählen nicht als Änderung',asy
  await c.execute("UPDATE items SET data=json_set(data,'$.hash','aus-frueherer-fassung')");
  const echt=await runMonitor({sources:[ausschuss],fetcher:async()=>[{...position,committees:['we','aa']}]});
  assert.equal(echt?.items[0]?.change,'changed','ein neuer Ausschuss ist eine Änderung');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Die Quelle "Exportkontrolle und Aussenwirtschaft" abonnierte den allgemeinen BAFA-Feed: E-Auto-Foerderung
+// und Energietag standen darin, der Energietag sogar als Dual-Use-Treffer. Die Feeds fuehren kein Datum;
+// die Kurzmeldungen tragen es im Dateinamen.
+test('BAFA: nur die Rubrik der Quelle, Datum aus dem Dateinamen, wo es vollständig ist',async()=>{
+ const basis={...doc,publishedAt:null,updatedAt:null};
+ const docs=[
+  {...basis,externalId:'a',url:'https://www.bafa.de/SharedDocs/Kurzmeldungen/DE/Aussenwirtschaft/Ausfuhrkontrolle/20260901_eu-dual-use-vo_evaluation_erinnerung.html'},
+  {...basis,externalId:'b',url:'https://www.bafa.de/SharedDocs/Kurzmeldungen/DE/Bundesamt/20250619_foerderkompass.html'},
+  {...basis,externalId:'c',url:'https://www.bafa.de/SharedDocs/Newsletter/DE/ManuellerVersand/Aussenwirtschaft/EKA_2026_07.html'},
+  {...basis,externalId:'d',url:'https://www.bafa.de/SharedDocs/Kurzmeldungen/DE/Aussenwirtschaft/Ausfuhrkontrolle/20261399_kaputt.html'}];
+ const r=rssNachbereiten(docs,{pfad:'/Aussenwirtschaft/'});
+ assert.deepEqual(r.map(d=>d.externalId),['a','c','d'],'der Förderkompass gehört nicht zur Außenwirtschaft');
+ assert.equal(r[0].publishedAt,'2026-09-01T00:00:00.000Z');
+ assert.equal(r[0].updatedAt,'2026-09-01T00:00:00.000Z');
+ assert.equal(r[1].publishedAt,null,'ein Newsletter ohne vollständiges Datum bekommt keins');
+ assert.equal(r[2].publishedAt,null,'ein ungültiges Datum wird nicht übernommen');
+ assert.equal(datumAusAdresse('https://www.bafa.de/x/20260231_y.html'),null,'kein 31. Februar');
+ const mitDatum=rssNachbereiten([{...basis,externalId:'e',url:docs[0].url,publishedAt:'2026-08-01T00:00:00.000Z',updatedAt:'2026-08-01T00:00:00.000Z'}],{});
+ assert.equal(mitDatum[0].publishedAt,'2026-08-01T00:00:00.000Z','ein Datum aus dem Feed hat Vorrang');
+ const {SOURCES}=await import('../src/model');
+ const bafa=SOURCES.find(s=>s.institution==='BAFA')!;
+ assert.match(bafa.feed!,/rssnewsfeed_aussenwirtschaft\.xml$/,'die Quelle abonniert die Rubrik, nicht den allgemeinen Feed');
+ assert.equal(bafa.pfad,'/Aussenwirtschaft/');
+});
+
+// Meldungen ohne Datum laufen nach dem Erstkontakt ab, ihr Feed liefert sie aber weiter - der BAFA-Feed
+// fuehrt Newsletter aus dem Oktober 2025. Ohne Merkliste kamen sie nach jeder Frist als "neu" zurueck.
+test('Eine abgelaufene Meldung ohne Datum kommt nicht als neu zurück',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-ohnedatum-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const feed:Source={id:'bafa-aussenwirtschaft',name:'B',institution:'BAFA',url:'https://www.bafa.de/',kind:'rss',note:'Fixture'};
+ const meldung={...doc,externalId:'eka-2026-07',title:'Exportkontrolle Aktuell Juli 2026',url:'https://www.bafa.de/SharedDocs/Newsletter/DE/ManuellerVersand/Aussenwirtschaft/EKA_2026_07.html',
+  documentNumber:null,publishedAt:null,updatedAt:null,committees:[],lead:null,topics:[]};
+ try{
+ // Ein erster, leerer Abruf: danach gilt die Quelle als bekannt, und neue Meldungen sind wirklich neu.
+ await runMonitor({sources:[feed],fetcher:async()=>[],retentionDays:10});
+ const erst=await runMonitor({sources:[feed],fetcher:async()=>[meldung],retentionDays:10});
+ assert.equal(erst?.items[0]?.change,'new','nach dem Erstabruf ist eine Meldung ohne Datum neu');
+ const {db}=await import('../src/server/db');const c=await db();
+ await c.execute({sql:"UPDATE items SET data=json_set(data,'$.firstSeen',?)",args:[new Date(Date.now()-20*86400000).toISOString()]});
+ await runMonitor({sources:[feed],fetcher:async()=>[meldung],retentionDays:10});
+ assert.equal((await dashboard()).items.length,0,'nach der Frist entfernt');
+ const dritt=await runMonitor({sources:[feed],fetcher:async()=>[meldung],retentionDays:10});
+ assert.equal(dritt?.items.length,0,'der Feed liefert sie weiter, neu ist sie deshalb nicht');
+ assert.equal((await dashboard()).items.length,0,'und sie bleibt draußen');
+ const neu=await runMonitor({sources:[feed],fetcher:async()=>[meldung,{...meldung,externalId:'eka-2026-09',title:'Exportkontrolle Aktuell September 2026'}],retentionDays:10});
+ assert.equal(neu?.items.length,1,'eine wirklich neue Meldung ohne Datum kommt weiterhin herein');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Der Rubrikfeed des BAFA fuehrt beim ersten Abruf 7 Meldungen ohne Datum, darunter "Exportkontrolle
+// Aktuell - Oktober 2025". Sie stuenden sonst zehn Tage lang als aktuell im Lagebild.
+test('Beim ersten Abruf einer Quelle bleiben Meldungen ohne Datum draußen',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-erstabruf-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const feed:Source={id:'bafa-aussenwirtschaft',name:'B',institution:'BAFA',url:'https://www.bafa.de/',kind:'rss',note:'Fixture'};
+ const heute=new Date(Date.now()-86400000).toISOString();
+ const archiv={...doc,externalId:'eka-2025-10',title:'Exportkontrolle Aktuell – Oktober 2025',url:'https://www.bafa.de/SharedDocs/Newsletter/DE/ManuellerVersand/Aussenwirtschaft/EKA_2025_10.html',
+  documentNumber:null,publishedAt:null,updatedAt:null,committees:[],lead:null,topics:[]};
+ const datiert={...archiv,externalId:'km',title:'Neue Ausfuhrregel',url:'https://www.bafa.de/SharedDocs/Kurzmeldungen/DE/Aussenwirtschaft/x.html',publishedAt:heute,updatedAt:heute};
+ try{
+ await runMonitor({sources:[feed],fetcher:async()=>[archiv,datiert],retentionDays:10});
+ assert.deepEqual((await dashboard()).items.map(i=>i.externalId),['km'],'nur die datierte Meldung kommt beim Erstabruf herein');
+ const zweit=await runMonitor({sources:[feed],fetcher:async()=>[archiv,datiert],retentionDays:10});
+ assert.equal(zweit?.items.length,0,'das Archiv erscheint auch später nicht als neu');
+ const neu=await runMonitor({sources:[feed],fetcher:async()=>[archiv,datiert,{...archiv,externalId:'eka-2026-09',title:'Exportkontrolle Aktuell September 2026'}],retentionDays:10});
+ assert.equal(neu?.items.length,1,'eine später erschienene Meldung ohne Datum kommt herein');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
