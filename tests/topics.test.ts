@@ -122,3 +122,16 @@ test('Die Behörde allein ist kein Exportkontroll-Thema',()=>{
  assert.equal(dual('Anpassung der Muster zu Endverbleibserklärungen für Ausfuhren'),true,'der Endverbleib ist Exportkontrolle');
  assert.equal(dual('Änderung des AWG'),true,'Abkürzungen des Außenwirtschaftsrechts bleiben');
 });
+
+// Der Behoerdenname enthaelt das Wort "Ausfuhrkontrolle". Die "Bundesfoerderung fuer effiziente Gebaeude"
+// wurde dadurch zum Dual-Use-Treffer, und beim EEG stand der Name als Beleg statt des Aussenwirtschaftsgesetzes.
+test('Der Name des Bundesamtes ist keine Exportkontroll-Fundstelle',()=>{
+ const dual=(b:string)=>scanTopics('Kleine Anfrage',b).find(m=>m.topic==='dualuse');
+ assert.equal(dual('Nach den Mitteilungen des BMWE und des Bundesamtes für Wirtschaft und Ausfuhrkontrolle (BAFA) fand die Antragsphase statt.'),undefined);
+ assert.equal(dual('Das Bundesamt für Wirtschaft und Ausfuhrkontrolle prüft die Anträge.'),undefined);
+ const eeg=dual('Dem Bundesamt für Wirtschaft und Ausfuhrkontrolle sind die Angaben mitzuteilen. Ein Bieter, der Unionsfremder im Sinn des § 2 Absatz 19 des Außenwirtschaftsgesetzes ist, wird ausgeschlossen.');
+ assert.ok(eeg,'eine echte Fundstelle im selben Text bleibt');
+ assert.deepEqual(eeg!.terms,['außenwirtschaftsgesetz'],'gezählt wird nur die echte Fundstelle');
+ assert.match(eeg!.snippet,/Außenwirtschaftsgesetzes/,'und sie ist der Beleg');
+ assert.ok(dual('Die neue Regel zur Ausfuhrkontrolle von Laserquellen gilt ab Januar.'),'das Wort selbst bleibt ein Treffer');
+});

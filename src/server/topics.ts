@@ -19,10 +19,15 @@ export interface Topic {id:string; label:string; why:string; terms:string[]; str
 // ausgeklammerten Saetze waren reine Kostenformeln.
 const KOSTEN='(?:Weitere\\s+Kosten|Kosten\\s+für\\s+die\\s+Wirtschaft|entstehen[^.!?]*\\bkeine\\b[^.!?]*Kosten)';
 const KOSTENFORMEL=new RegExp(`[^.!?]*${KOSTEN}[^.!?]*mittelst[äa]ndisch[^.!?]*[.!?]?|[^.!?]*mittelst[äa]ndisch[^.!?]*${KOSTEN}[^.!?]*[.!?]?`,'gi');
+// Das Amt heisst "Bundesamt fuer Wirtschaft und Ausfuhrkontrolle". Es verwaltet auch Gebaeude-, Energie-
+// und Wirtschaftsfoerderung; sein Name machte die "Bundesfoerderung fuer effiziente Gebaeude" zum
+// Dual-Use-Treffer und stand in drei weiteren Dokumenten als Beleg vor der eigentlichen Fundstelle.
+const BEHOERDENNAME=/Bundesamt(?:e?s)?\s+für\s+Wirtschaft\s+und\s+Ausfuhrkontrolle/gi;
 export const TOPICS:Topic[] = [
  {id:'dualuse',label:'Export & Dual-Use',why:'Ausfuhrrecht und Güterlisten entscheiden, was TRUMPF wohin liefern darf.',
   terms:['dual-use','dual use','ausfuhrkontrolle','exportkontrolle','ausfuhrgenehmigung','außenwirtschaftsgesetz','außenwirtschaftsverordnung','güterliste','rüstungsexport','embargo','sanktionsregime','investitionsprüfung','technologietransfer','wassenaar','endverbleib'],
-  strict:['AWG','AWV']},
+  strict:['AWG','AWV'],
+  ignore:[BEHOERDENNAME]},
  {id:'halbleiter',label:'Halbleiter & EUV',why:'TRUMPF liefert die Laserverstärker für die EUV-Lithografie.',
   terms:['halbleiter','mikroelektronik','chipfertigung','chipindustrie','chips act','mikrochip','lithografie','lithographie','semiconductor','waferfertigung','leistungshalbleiter'],
   strict:['EUV']},
