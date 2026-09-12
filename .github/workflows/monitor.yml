@@ -2,8 +2,9 @@ name: Quellen prüfen und veröffentlichen
 
 on:
   schedule:
-    # GitHub plant in UTC. 04:00–20:00 UTC sind 06:00–22:00 Berliner Zeit im Sommer,
-    # 05:00–21:00 im Winter. Alle 30 Minuten über den ganzen Tag.
+    # GitHub plant in UTC und kennt keine Sommerzeit. Erster Lauf 04:00 UTC, letzter 20:30 UTC:
+    # im Sommer 06:00 bis 22:30, im Winter 05:00 bis 21:30 Berliner Zeit, 34 Läufe am Tag.
+    # Die Einstellungsseite nennt genau diese Zeiten.
     # Kürzere Abstände bringen nichts: GitHub verzögert geplante Läufe unter Last.
     - cron: '*/30 4-20 * * *'
   workflow_dispatch:

@@ -136,3 +136,51 @@ test('Überlange Amtswörter brechen um',()=>{
  assert.match(css,/h1,h2,h3,p,strong,li,td,th\{overflow-wrap:break-word\}/,'lange Wörter müssen umbrechen dürfen');
  assert.match(css,/\.item-card h3[^{]*\{hyphens:auto\}/,'Dokumenttitel werden nach deutschen Regeln getrennt');
 });
+
+// Die Einstellungsseite versprach "zwischen 06:00 und 22:00 Uhr Berliner Zeit". GitHub plant aber
+// in UTC ohne Sommerzeit: der letzte Lauf fällt auf 22:30 im Sommer und 21:30 im Winter. Der Test
+// rechnet die Zeiten aus dem Workflow selbst nach, damit Text und Zeitplan nicht wieder auseinanderlaufen.
+test('Die genannten Laufzeiten folgen aus dem Zeitplan',()=>{
+ const yml=readFileSync('.github/workflows/monitor.yml','utf8');
+ const m=/cron:\s*'\*\/30 (\d+)-(\d+) \* \* \*'/.exec(yml);
+ assert.ok(m,'Zeitplan nicht gefunden');
+ const [von,bis]=[Number(m![1]),Number(m![2])];
+ const berlin=(tag:string,h:number,min:number)=>new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',hour:'2-digit',minute:'2-digit'})
+  .format(new Date(`${tag}T${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}:00Z`));
+ const sommer=[berlin('2026-07-15',von,0),berlin('2026-07-15',bis,30)];
+ const winter=[berlin('2026-12-15',von,0),berlin('2026-12-15',bis,30)];
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes(`im Sommer von ${sommer[0]} bis ${sommer[1]} Uhr`),`Sommer muss ${sommer.join('–')} lauten`);
+ assert.ok(seite.includes(`im Winter von ${winter[0]} bis ${winter[1]} Uhr`),`Winter muss ${winter.join('–')} lauten`);
+ assert.ok(!seite.includes('zwischen 06:00 und 22:00'),'die alte Angabe stimmte in keiner Jahreszeit');
+ assert.ok(seite.includes(`Sommer ${sommer[0]}–${sommer[1]}, Winter ${winter[0]}–${winter[1]} Uhr`),'auch der Betriebsstatus nennt die richtigen Zeiten');
+ const readme=readFileSync('README.md','utf8');
+ assert.ok(readme.includes(`${sommer[0]} bis ${sommer[1]} Berliner Zeit im Sommer`)&&readme.includes(`${winter[0]} bis ${winter[1]} im Winter`),'README nennt dieselben Zeiten');
+});
+
+// Aussagen, die der Bestand widerlegt hat: 469 von 559 Vorhaben tragen keine Drucksache; 62 von 108
+// Dokumenten kommen ohne Gremium über die Volltextsuche herein; drei der Dokumente ohne Gremium
+// stammen aus der Ausfuhrkontrolle, nicht aus der Volltextsuche.
+test('Die Oberfläche behauptet nichts, was der Bestand widerlegt',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(!seite.includes('Jedes Vorhaben verlinkt'),'die meisten Vorhaben haben kein eigenes Papier');
+ assert.ok(!seite.includes('Alles andere wird verworfen'),'die Volltextsuche nimmt Papiere unabhängig vom Gremium auf');
+ assert.ok(!seite.includes('stammen aus der Volltextsuche und sind keinem'),'nicht alle Dokumente ohne Gremium kommen aus der Volltextsuche');
+ assert.ok(seite.includes('const quellenOhneGremium='),'die Quellen werden aus dem Bestand abgeleitet');
+ assert.ok(seite.includes('die Liste der Themenbegriffe'),'die Themenliste ist die zweite inhaltliche Entscheidung');
+});
+
+test('Keine Tabelle ohne Verwendung',()=>{
+ assert.ok(!readFileSync('src/server/db.ts','utf8').includes('cron_days'),'cron_days wurde nie gelesen oder geschrieben');
+});
+
+// Beide Saetze erschienen auf der Live-Seite und widersprachen dem Bestand: 75 von 108 Dokumenten
+// zeigen eine Fundstelle aus dem Volltext, 18 haben keine Drucksachennummer, 12 kein PDF, und die
+// Volltextsuche nimmt Papiere nach Thema auf, nicht nach Gremium.
+test('Detail- und Einstellungsseite beschreiben die Arbeitsweise zutreffend',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(!seite.includes('Der Inhalt wird nicht ausgewertet'),'die Themensuche liest den Volltext');
+ assert.ok(!seite.includes('Gefiltert wird ausschließlich über die Zuständigkeit'),'es gibt zwei Wege in die App');
+ assert.ok(!seite.includes('unverändert mit Drucksachennummer und amtlichem PDF'),'nicht jedes Dokument hat beides');
+ assert.ok(!seite.includes('keine Priorisierung'),'Thementreffer stehen oben');
+});

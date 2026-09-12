@@ -133,7 +133,7 @@ Für die Nutzung auf dem Handy ohne laufenden Mac baut `.github/workflows/monito
 2. Unter **Settings → Secrets and variables → Actions** das Secret `DIP_API_KEY` setzen.
 3. Unter **Settings → Pages** als Quelle **GitHub Actions** wählen.
 
-Der Workflow läuft alle 30 Minuten von 04:00 bis 20:00 UTC, also 06:00 bis 22:00 Berliner Zeit im Sommer und 05:00 bis 21:00 im Winter. Kürzere Abstände bringen nichts, da GitHub geplante Läufe unter Last verzögert.
+Der Workflow läuft alle 30 Minuten von 04:00 bis 20:30 UTC, also 06:00 bis 22:30 Berliner Zeit im Sommer und 05:00 bis 21:30 im Winter (34 Läufe am Tag). Kürzere Abstände bringen nichts, da GitHub geplante Läufe unter Last verzögert.
 
 **Was versioniert wird und was nicht.** `data/monitor.db` ist ableitbarer Zwischenstand und steht in `.gitignore`; bei halbstündlichen Läufen würde die Binärdatei das Repository um mehrere hundert MB im Jahr aufblähen. Zwischen den Läufen hält `actions/cache` sie vor. Versioniert wird nur `public/bootstrap.json`, und zwar ausschließlich, wenn der Lauf neue oder geänderte Dokumente gefunden hat. Fehlt die Datenbank — etwa nach Ablauf des Zwischenspeichers —, baut `seedFromSnapshot` sie aus `public/bootstrap.json` wieder auf, damit bereits bekannte Dokumente nicht erneut als neu gemeldet werden. Stände aus einer früheren Fassung tragen neuere Felder nicht; `asItem` ergänzt sie beim Lesen, sonst bricht ein Lauf an einem fehlenden Feld ab.
 
