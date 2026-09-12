@@ -1,12 +1,21 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
-import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash} from './parsing';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
+import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash,dipUrl} from './parsing';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
 // Stände aus einer früheren Fassung tragen neuere Felder noch nicht. Jeder Leser bekommt deshalb
 // vollständige Listen, statt an einem fehlenden Feld zu scheitern - genau daran brach ein Lauf ab.
+// Die kurzen DIP-Adressen aus frueheren Fassungen fuehren auf "Seite nicht gefunden". Ein Eintrag
+// wird aber nur neu geschrieben, wenn seine Quelle ihn erneut liefert - ohne Reparatur beim Lesen
+// blieben die toten Links bis zum Ablauf der Aufbewahrungsfrist stehen.
+const KURZE_DIP=/^https:\/\/dip\.bundestag\.de\/(vorgang|drucksache)\/(\d+)$/;
+export function repariereDipAdresse(url:string,titel:string):string{
+ const m=KURZE_DIP.exec(url??'');
+ return m?dipUrl(m[1] as 'vorgang'|'drucksache',m[2],titel):url;
+}
 export function asItem(raw:unknown):Item{
  const i=raw as Partial<Item>;
  return {...(i as Item),
+  url:typeof i.url==='string'?repariereDipAdresse(i.url,i.title??''):(i.url??''),
   topics:Array.isArray(i.topics)?i.topics:[],
   committees:Array.isArray(i.committees)?i.committees:[],
   ministries:Array.isArray(i.ministries)?i.ministries:[],

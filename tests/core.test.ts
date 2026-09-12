@@ -376,3 +376,23 @@ test('Briefings werden schlank ausgeliefert, ohne die Aussage zu verlieren',asyn
  // Ein Briefing ohne Einträge bleibt unverändert nutzbar.
  assert.deepEqual(schlankesBriefing({...voll,items:[]}).items,[]);
 });
+
+// Die kurzen DIP-Adressen fuehren auf "Seite nicht gefunden". Ein Eintrag wird aber nur neu
+// geschrieben, wenn seine Quelle ihn erneut liefert - live blieben 80 von 90 Adressen tot.
+test('Alte DIP-Adressen werden beim Lesen repariert',async()=>{
+ const {asItem,repariereDipAdresse}=await import('../src/server/monitor');
+ assert.equal(repariereDipAdresse('https://dip.bundestag.de/vorgang/338357','Drittes Gesetz zur Änderung'),
+  'https://dip.bundestag.de/vorgang/drittes-gesetz-zur-aenderung/338357');
+ assert.equal(repariereDipAdresse('https://dip.bundestag.de/drucksache/290686','Hochtechnologie-Agenda'),
+  'https://dip.bundestag.de/drucksache/hochtechnologie-agenda/290686');
+ // Bereits gültige Adressen bleiben unverändert, fremde ebenfalls.
+ const gut='https://dip.bundestag.de/vorgang/schon-gut/1';
+ assert.equal(repariereDipAdresse(gut,'x'),gut);
+ assert.equal(repariereDipAdresse('https://www.bundestag.de/x.pdf','x'),'https://www.bundestag.de/x.pdf');
+ assert.equal(repariereDipAdresse('https://dip.bundestag.de/suche?f.id=1','x'),'https://dip.bundestag.de/suche?f.id=1');
+ // Und der Weg über asItem, den alle Leser nehmen.
+ const i=asItem({...doc,id:'x',sourceId:'dip-committees',url:'https://dip.bundestag.de/vorgang/338357',
+  title:'Drittes Gesetz zur Änderung',hash:'h',version:1,change:'unchanged',
+  firstSeen:'2026-09-01T00:00:00.000Z',lastSeen:'2026-09-01T00:00:00.000Z',changedAt:'2026-09-01T00:00:00.000Z',archived:false});
+ assert.ok(i.url.endsWith('/338357')&&i.url.split('/').length===6,`repariert: ${i.url}`);
+});
