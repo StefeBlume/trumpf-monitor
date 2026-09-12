@@ -668,3 +668,16 @@ test('Was eine DIP-Quelle in ihrem Fenster nicht mehr liefert, fällt heraus',as
  await runMonitor({sources:[ausschuss,volltext],fetcher:async(s)=>s.id==='dip-committees'?[]:[treffer],retentionDays:10});
  assert.equal((await dashboard()).items.length,1,'die Volltextsuche liefert das Papier weiter - es bleibt');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Die Zusammenfassung kannte keine Einzahl ("1 neue oder geänderte Dokumente in 1 ausgewählten Ausschüssen")
+// und schrieb Treffer der Themensuche den Ausschüssen zu ("30 Dokumente in 12 Ausschüssen", davon 2 ohne).
+test('Die Zusammenfassung zählt richtig und beugt richtig',()=>{
+ const item=(c:string[],change:string)=>({...doc,committees:c,change}) as unknown as Item;
+ assert.match(briefingSummary([item(['we'],'new')],false,4,0,0),/^1 neues oder geändertes Dokument in 1 ausgewählten Ausschuss \(Wirtschaft und Energie\)\./);
+ const gemischt=briefingSummary([item(['we'],'new'),item(['fi'],'changed'),item([],'new')],false,4,0,0);
+ assert.match(gemischt,/^3 neue oder geänderte Dokumente, davon 2 in 2 ausgewählten Ausschüssen \(Wirtschaft und Energie, [^)]+\) und 1 ohne Ausschuss\./);
+ assert.match(briefingSummary([item([],'new')],false,4,0,0),/^1 neues oder geändertes Dokument\. /,'ohne jeden Ausschuss keine Ausschussangabe');
+ assert.doesNotMatch(briefingSummary([],false,4,0,0),/Ausschüssen und Ressorts/,'die Themensuche gehört zur Aussage');
+ assert.match(briefingSummary([item([],'baseline')],true,4,0,0),/^Ausgangsstand mit 1 Dokument angelegt\./);
+ assert.match(briefingSummary([],false,3,1,1),/1 Quellenfehler, 1 offene Anbindung\./);
+});

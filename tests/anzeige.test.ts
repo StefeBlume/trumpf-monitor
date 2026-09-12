@@ -268,3 +268,15 @@ test('Fußnote, Quellenhinweis und Datumsfilter sagen, was die App tut',()=>{
  assert.ok(seite.includes('<label>Letzte Bewegung ab<input type="date"'),'und die Beschriftung sagt es');
  assert.ok(!seite.includes('Veröffentlicht ab'));
 });
+
+// "Sortiert nach Themenbreite und Zahl der Vorhaben" - der Code sortiert nach eigenem Eintrag, dann nach
+// Vorhaben zu deinen Themen, dann nach Themenbreite. Beim BDEW stehen 200 gemeldete Vorhaben auf der Karte,
+// sortiert wird nach 41.
+test('Die Akteure-Ansicht beschreibt ihre Sortierung so, wie sie sortiert',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes('Eigener Eintrag zuerst, dann nach Vorhaben zu deinen Themen und nach Themenbreite'));
+ const sortierung=/\.sort\(\(a,b\)=>Number\(b\.own\)-Number\(a\.own\)\|\|trefferVorhaben\(b\)-trefferVorhaben\(a\)\|\|b\.topics\.length-a\.topics\.length/;
+ assert.match(seite,sortierung,'Beschreibung und Sortierung gehören zusammen');
+ assert.ok(!seite.includes("'Vorhaben gemeldet':'Vorhaben gemeldet'"),'kein Zweig mit zwei gleichen Ergebnissen');
+ assert.ok(!seite.includes('Ausgewählte Ausschüsse und Ressorts'),'der Export nennt auch die Themensuche');
+});

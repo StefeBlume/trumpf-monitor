@@ -62,7 +62,7 @@ export default function Home(){
  // Der Zeitpunkt des letzten Quellenabrufs steht im Quellenstatus. Er ist der ehrlichere Wert als
  // der Zeitstempel des Briefings, weil er auch dann stimmt, wenn ein Lauf nichts gefunden hat.
  const lastCheck=data.sources.map(s=>s.checkedAt).filter(Boolean).sort().at(-1);
- // Sortiert nach eigenem Eintrag, Themenbreite und der Zahl der Vorhaben MIT Themenbezug - die
+ // Sortiert nach eigenem Eintrag, dann der Zahl der Vorhaben MIT Themenbezug, dann der Themenbreite - die
  // gemeldete Gesamtzahl sagt wenig: ein Verband mit 200 Vorhaben kann keines zu deinen Themen führen.
  // Ohne Themenfilter zaehlt die mitgefuehrte Gesamtzahl, mit Filter nur die gespeicherten Treffer.
  const trefferVorhaben=(e:{projectList?:LobbyProject[];topicProjects?:number})=>
@@ -114,7 +114,7 @@ export default function Home(){
  async function exportBriefing(b:Briefing){
  const entry=(i:Item)=>[i.title,`${labels[i.change]} · ${i.documentType}${i.step?' · '+i.step:''}${i.documentNumber?' · Drucksache '+i.documentNumber:''}`,`Datum: ${date(i.publishedAt)}`,i.lead?`Federführend: ${committeeById(i.lead)?.name}`:'',bodies(i).length?`Gremien: ${bodies(i).join(', ')}`:'',i.originator?`Urheber: ${i.originator}`:'',`Quelle: ${i.url}`,i.pdfUrl?`PDF: ${i.pdfUrl}`:''].filter(Boolean).join('\n');
  const groups=[...new Set(b.items.flatMap(i=>[...i.committees,...i.ministries]))];
- const text=['POLICY MONITOR · TRUMPF · Ausgewählte Ausschüsse und Ressorts',date(b.createdAt,true),b.summary,`Dieser Export listet die ${b.items.length} im Briefing gespeicherten Dokumente. Die Gesamtzahl steht in der Zusammenfassung.`,
+ const text=['POLICY MONITOR · TRUMPF · Ausgewählte Gremien und Themensuche',date(b.createdAt,true),b.summary,`Dieser Export listet die ${b.items.length} im Briefing gespeicherten Dokumente. Die Gesamtzahl steht in der Zusammenfassung.`,
  ...groups.flatMap(g=>['\n'+(committeeById(g)?.name??ministryById(g)?.name??g),...b.items.filter(i=>i.committees.includes(g)||i.ministries.includes(g)).map(entry)]),
  ...(b.items.some(i=>!i.committees.length&&!i.ministries.length)?['\nOhne Gremienzuordnung',...b.items.filter(i=>!i.committees.length&&!i.ministries.length).map(entry)]:[])].join('\n\n');
  try{if(navigator.share){await navigator.share({title:'Policy Briefing '+b.day,text});}else{const url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`Briefing-${b.day}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}catch(e){if((e as Error).name!=='AbortError')setError('Export fehlgeschlagen.');}}
@@ -169,12 +169,12 @@ export default function Home(){
  view==='lobby'?<><div className="page-heading"><div><div className="eyebrow">AMTLICHES LOBBYREGISTER</div><h1>Wer sich einsetzt.</h1><p>Registrierte Interessenvertretung zu deinen Themen. Selbstauskunft aus dem Register, ohne Bewertung.</p></div></div>
  <div className="notice"><ShieldCheck size={20}/><span><strong>Wozu diese Seite?</strong> Sie zeigt, an welchen Gesetzesvorhaben sich andere gerade abarbeiten — Verbände, Wettbewerber, Forschungseinrichtungen. Wo viele gleichzeitig arbeiten, bewegt sich etwas. Nennt das Register eine Drucksache, ist sie verlinkt; die meisten Vorhaben sind Positionen ohne eigenes Papier. Quelle ist die Selbstauskunft im amtlichen Register: es zeigt, wer sich <strong>registriert</strong> hat, nicht wer tatsächlich Einfluss nimmt.</span></div>
  {themenleiste(id=>(data.lobby??[]).filter(e=>e.topics.includes(id)).length)}
- <section className="results"><div className="section-heading"><h2><Users size={19}/> Akteure <span>{lobby.length}</span></h2><span className="muted">Sortiert nach Themenbreite und Zahl der Vorhaben</span></div>
+ <section className="results"><div className="section-heading"><h2><Users size={19}/> Akteure <span>{lobby.length}</span></h2><span className="muted">Eigener Eintrag zuerst, dann nach Vorhaben zu deinen Themen und nach Themenbreite</span></div>
  {lobby.length?<div className="item-list">{lobby.map(e=><div key={e.registerNumber} className={'lobby-card'+(e.own?' eigen':'')}>
   <a className="lobby-kopf" href={e.url} target="_blank" rel="noopener noreferrer"><div><strong>{e.name}</strong><span className="lobby-typ">{e.kind}{e.own&&' · eigener Eintrag'}</span></div><ArrowUpRight size={17}/></a>
   <div className="tags">{e.topics.map(id=><span key={id} className="badge topic">{topicById(id)?.label}</span>)}</div>
   <div className="lobby-zahlen">
-   <span><FileText size={14}/>{e.projects} {e.projects===1?'Vorhaben gemeldet':'Vorhaben gemeldet'}</span>
+   <span><FileText size={14}/>{e.projects} Vorhaben gemeldet</span>
    {e.statements>0&&<span><Quote size={14}/>{e.statements} Stellungnahme{e.statements===1?'':'n'}</span>}
    {e.staffFte!==null&&<span><Users size={14}/>{e.staffFte.toLocaleString('de-DE')} Vollzeitstellen</span>}
    {geld(e)&&<span><Euro size={14}/>{geld(e)}{e.fiscalYear?` (${e.fiscalYear})`:''}</span>}

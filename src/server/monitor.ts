@@ -64,11 +64,19 @@ export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed
  if(!ok)return 'Keine belastbare Aussage: Es konnte keine Quelle erfolgreich geprüft werden.';
  const changes=updated.filter(i=>i.change!=='baseline');
  const committees=new Set(changes.flatMap(i=>i.committees));
- const coverage=failed||manual?`Abdeckung unvollständig: ${failed} Quellenfehler, ${manual} offene Anbindungen.`:'Die Aussage gilt nur für die erfassten amtlichen Quellen.';
- const head=baseline?`Ausgangsstand mit ${updated.filter(i=>i.change==='baseline').length} Dokumenten angelegt. Erstimporte sind keine nachgewiesenen Neuigkeiten. `:'';
- if(!changes.length)return `${head}${baseline?'Darüber hinaus keine':'Keine'} neuen oder geänderten Dokumente in den ausgewählten Ausschüssen und Ressorts seit dem letzten erfolgreichen Quellenstand. ${coverage}`;
+ // Ohne Einzahl hiess es "1 neue oder geaenderte Dokumente in 1 ausgewaehlten Ausschuessen".
+ const zahl=(n:number,eins:string,mehr:string)=>`${n} ${n===1?eins:mehr}`;
+ const coverage=failed||manual?`Abdeckung unvollständig: ${zahl(failed,'Quellenfehler','Quellenfehler')}, ${zahl(manual,'offene Anbindung','offene Anbindungen')}.`:'Die Aussage gilt nur für die erfassten amtlichen Quellen.';
+ const head=baseline?`Ausgangsstand mit ${zahl(updated.filter(i=>i.change==='baseline').length,'Dokument','Dokumenten')} angelegt. Erstimporte sind keine nachgewiesenen Neuigkeiten. `:'';
+ // Nicht "in den ausgewaehlten Ausschuessen und Ressorts": die Themensuche nimmt Drucksachen ohne Gremium auf.
+ if(!changes.length)return `${head}${baseline?'Darüber hinaus keine':'Keine'} neuen oder geänderten Dokumente seit dem letzten erfolgreichen Quellenstand. ${coverage}`;
  const named=[...committees].map(id=>committeeById(id)?.short).filter(Boolean).slice(0,4).join(', ');
- return `${head}${changes.length} neue oder geänderte Dokumente${committees.size?` in ${committees.size} ausgewählten Ausschüssen (${named}${committees.size>4?' u. a.':''})`:''}. ${coverage}`;
+ const gremien=`${zahl(committees.size,'ausgewählten Ausschuss','ausgewählten Ausschüssen')} (${named}${committees.size>4?' u. a.':''})`;
+ // "30 neue oder geaenderte Dokumente in 12 ausgewaehlten Ausschuessen" zaehlte Treffer der Themensuche mit,
+ // die gar keinem Ausschuss zugeordnet sind.
+ const mitAusschuss=changes.filter(i=>i.committees.length).length;
+ const verteilung=!committees.size?'':mitAusschuss===changes.length?` in ${gremien}`:`, davon ${mitAusschuss} in ${gremien} und ${changes.length-mitAusschuss} ohne Ausschuss`;
+ return `${head}${zahl(changes.length,'neues oder geändertes Dokument','neue oder geänderte Dokumente')}${verteilung}. ${coverage}`;
 }
 export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,since:string,warn?:(n:string)=>void)=>Promise<DocumentInput[]>; retentionDays?:number; lobby?:boolean; lobbyFetcher?:()=>Promise<LobbyEntry[]>}={}):Promise<Briefing|null>{
  const c=await db(),id=randomUUID(),clock=berlinClock();
