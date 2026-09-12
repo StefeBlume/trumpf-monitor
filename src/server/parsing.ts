@@ -79,3 +79,18 @@ export function parseAgendaTable(html:string,base:string):{committee:string;titl
  if(rows&&!rowsWithLink)throw new Error(`Tagesordnungstabelle hat ${rows} Zeilen, aber keine Verweise`);
  return out;
 }
+
+// DIP ist eine JavaScript-Anwendung mit eigenen Routen. Die kurzen Formen /vorgang/<id> und
+// /drucksache/<id> antworten zwar mit HTTP 200, zeigen aber "Seite nicht gefunden" - jeder Link in
+// die App war damit tot. Gueltig ist nur /<art>/<slug>/<id>; der Slug selbst ist beliebig, wird hier
+// aber aus dem Titel gebildet, damit die Adresse lesbar bleibt und der DIP-Konvention entspricht.
+// Fuer /vorgangsposition/ gibt es ueberhaupt keine Route.
+const UMLAUTE:Record<string,string>={'ä':'ae','ö':'oe','ü':'ue','ß':'ss'};
+export function slug(title:string,max=80):string{
+ const s=clean(title).toLowerCase().replace(/[äöüß]/g,c=>UMLAUTE[c]??c)
+  .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,max).replace(/-+$/,'');
+ return s||'dokument';
+}
+export function dipUrl(art:'vorgang'|'drucksache',id:string|number,title:string):string{
+ return `https://dip.bundestag.de/${art}/${slug(title)}/${id}`;
+}

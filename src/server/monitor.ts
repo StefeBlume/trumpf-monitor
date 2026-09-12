@@ -107,7 +107,7 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  await c.execute({sql:'UPDATE locks SET expires=? WHERE id=? AND owner=?',args:[Date.now()+600000,'monitor',id]});
  }
  if(ok)await deduplicate();
- if(retention>0&&ok)await prune(retention);
+ if(retention>0&&ok)await prune(retention,[...new Set([...configuredSources().map(s=>s.id),...all.map(s=>s.id)])]);
  // Das Briefing traegt die Dokumente mit; bei einem Erstimport waren das 184 KB. Gespeichert werden
  // hoechstens 40, ausgeliefert davon zwoelf - die Gesamtzahl steht in der Zusammenfassung.
  const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated.slice(0,40),coverage:{ok,failed,manual},errors};
@@ -146,8 +146,13 @@ export async function seedFromSnapshot(snapshot:{items?:Item[];events?:Event[];b
 // blieben monatealte Papiere liegen, nur weil die App sie gestern wiedergesehen hat.
 // Kuenftige Termine haben ein Datum in der Zukunft und werden dadurch nie entfernt.
 // Archiviertes bleibt, weil es bewusst aufgehoben wurde.
-export async function prune(days:number):Promise<number>{
+export async function prune(days:number,gueltigeQuellen?:string[]):Promise<number>{
  const c=await db();
+ // Wird eine Quelle umbenannt oder entfernt, bleiben ihre Dokumente sonst liegen: sie erscheinen in
+ // der Liste, ihre Quelle aber weder in der Quellenansicht noch im Filter. Die gueltigen Kennungen
+ // kommen von aussen, damit ein Lauf mit eigenen Quellen sich nicht selbst aufraeumt.
+ if(gueltigeQuellen?.length)
+  await c.execute({sql:`DELETE FROM items WHERE source_id NOT IN (${gueltigeQuellen.map(()=>'?').join(',')})`,args:gueltigeQuellen});
  // Briefings sammeln sich sonst unbegrenzt an. Ausgeliefert werden ohnehin nur die letzten zwoelf.
  await c.execute('DELETE FROM briefings WHERE rowid NOT IN (SELECT rowid FROM briefings ORDER BY rowid DESC LIMIT 60)');
  const cutoff=new Date(Date.now()-days*86400000).toISOString();

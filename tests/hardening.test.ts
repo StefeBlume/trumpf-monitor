@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readFileSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {clean,sourceURL,officialURL,germanDate,parseFeed,parseCommitteeEvents,parseAgendaTable,contentHash} from '../src/server/parsing';
+import {clean,sourceURL,officialURL,germanDate,parseFeed,parseCommitteeEvents,parseAgendaTable,contentHash,dipUrl,slug} from '../src/server/parsing';
 import {fetchOfficial,PermanentSourceError,matchCommitteeName,lookbackStart,mapCommitteePosition} from '../src/server/connectors';
 import {runMonitor,dashboard,prune} from '../src/server/monitor';
 import {resetDBForTests} from '../src/server/db';
@@ -185,7 +185,9 @@ test('Unvollstaendige DIP-Antworten fuehren nicht zu halben Eintraegen',()=>{
  assert.equal(ok.publishedAt,null,'ein unlesbares Datum wird nicht geraten');
  assert.equal(ok.updatedAt,null);
  assert.equal(ok.pdfUrl,null);
- assert.equal(ok.url,'https://dip.bundestag.de/vorgangsposition/1');
+ // Ohne Vorgang und ohne Fundstelle bleibt nur die Suche - die Route /vorgangsposition/ gibt es im
+ // DIP nicht, ein Link dorthin waere tot.
+ assert.equal(ok.url,'https://dip.bundestag.de/suche?f.id=1');
 });
 
 import {parseMinistryDrafts,bmfLabel} from '../src/server/connectors';
@@ -245,4 +247,26 @@ test('Das Seitenlimit deckt ein volles Abrufzeitfenster',async()=>{
  // Und das Fenster selbst bleibt bei 30 Tagen gedeckelt.
  const aeltest=lookbackStart('2020-01-01T00:00:00.000Z');
  assert.ok(Date.now()-Date.parse(aeltest)<=30*86400000+2000);
+});
+
+// Die kurzen DIP-Adressen antworteten mit HTTP 200, zeigten aber "Seite nicht gefunden". Jeder Link
+// aus der App ins DIP war damit tot - und das betraf die Mehrheit aller Dokumente.
+test('DIP-Adressen tragen den Slug, ohne den die Seite nicht gefunden wird',()=>{
+ const v=dipUrl('vorgang',338786,'Gesetz zur Änderung des Außenwirtschaftsgesetzes');
+ assert.match(v,/^https:\/\/dip\.bundestag\.de\/vorgang\/[a-z0-9-]+\/338786$/);
+ assert.ok(v.includes('aussenwirtschaftsgesetzes'),'Umlaute werden umschrieben, nicht verworfen');
+ const d=dipUrl('drucksache',290686,'Hochtechnologie-Agenda wirksam machen');
+ assert.match(d,/^https:\/\/dip\.bundestag\.de\/drucksache\/hochtechnologie-agenda-wirksam-machen\/290686$/);
+ // Ohne Slug-Segment ist die Adresse tot; das darf nie wieder entstehen.
+ for(const u of [v,d])assert.equal(u.split('/').length,6,`${u} hat kein Slug-Segment`);
+ assert.ok(officialURL(v)&&officialURL(d));
+});
+
+test('Der Slug bleibt auch bei unbrauchbaren Titeln gültig',()=>{
+ assert.equal(slug(''),'dokument');
+ assert.equal(slug('   '),'dokument');
+ assert.equal(slug('!!! ??? ---'),'dokument');
+ assert.equal(slug('Äpfel, Öl und Übermut – groß'),'aepfel-oel-und-uebermut-gross');
+ assert.ok(slug('x'.repeat(300)).length<=80,'die Adresse bleibt handhabbar');
+ assert.ok(!slug('Ende mit Satzzeichen ...').endsWith('-'),'kein Trennstrich am Ende');
 });

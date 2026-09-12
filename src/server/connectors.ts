@@ -1,5 +1,5 @@
 import {SOURCES,COMMITTEES,MINISTRIES,committeeByKuerzel,type Source,type DocumentInput} from '../model';
-import {parseFeed,parseCommitteeEvents,parseAgendaTable,officialURL,clean} from './parsing';
+import {parseFeed,parseCommitteeEvents,parseAgendaTable,officialURL,clean,dipUrl} from './parsing';
 import {scanTopics} from './topics';
 export function configuredSources():Source[]{return SOURCES.map(s=>({...s,...(s.kind==='rss'&&s.env&&process.env[s.env]?{feed:process.env[s.env]}:{})}));}
 export class PermanentSourceError extends Error {}
@@ -63,7 +63,7 @@ export function mapCommitteePosition(d:any):DocumentInput|null{
  const referrals:{id:string;lead:boolean}[]=(Array.isArray(d?.ueberweisung)?d.ueberweisung as any[]:[]).flatMap((u:any)=>{const c=committeeByKuerzel(String(u?.ausschuss_kuerzel??''));const lead=u?.federfuehrung===true;return c&&(lead||!c.leadOnly)?[{id:c.id,lead}]:[];});
  if(!referrals.length||!d?.id||!d?.titel)return null;
  const f=d.fundstelle??{};
- return {externalId:String(d.id),title:clean(d.titel),url:d.vorgang_id?`https://dip.bundestag.de/vorgang/${d.vorgang_id}`:`https://dip.bundestag.de/vorgangsposition/${d.id}`,
+ return {externalId:String(d.id),title:clean(d.titel),url:d.vorgang_id?dipUrl('vorgang',d.vorgang_id,clean(d.titel)):f.id?dipUrl('drucksache',f.id,clean(d.titel)):`https://dip.bundestag.de/suche?f.id=${encodeURIComponent(String(d.id))}`,
  text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(f.drucksachetyp??d.dokumentart??'Vorgangsposition'),step:d.vorgangsposition?clean(d.vorgangsposition):null,
  procedure:d.vorgangstyp?clean(d.vorgangstyp):null,documentNumber:f.dokumentnummer?clean(f.dokumentnummer):null,pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
  committees:[...new Set(referrals.map(r=>r.id))],lead:referrals.find(r=>r.lead)?.id??null,ministries:[],topics:scanTopics(clean(d.titel)),
@@ -85,7 +85,7 @@ export function mapFulltextDrucksache(d:any):DocumentInput|null{
  const title=clean(d.titel);
  const topics=scanTopics(title,typeof d.text==='string'?d.text:'');
  if(!hit.length&&!topics.length)return null;
- return {externalId:String(d.id),title,url:`https://dip.bundestag.de/drucksache/${d.id}`,
+ return {externalId:String(d.id),title,url:dipUrl('drucksache',d.id,title),
  text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(d.drucksachetyp??d.dokumentart??'Drucksache'),
  step:null,procedure:null,documentNumber:d.dokumentnummer?clean(d.dokumentnummer):null,
  pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
