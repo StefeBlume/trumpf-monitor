@@ -25,3 +25,10 @@ export function suchtext(i:Item,gremien:string[]):string{
  return [i.title,i.documentNumber,i.documentType,i.step,i.procedure,i.originator,...gremien,...themen]
   .filter((x):x is string=>typeof x==='string'&&x.length>0).join(' ').toLowerCase();
 }
+
+// Ausschuesse kuendigen Anhoerungen im Voraus an. Auf der Karte des Rechtsausschusses stand deshalb
+// "zuletzt 14. Okt. 2026", waehrend heute der 12. September war - das liest sich wie ein Datumsfehler,
+// obwohl der Termin stimmt. Verglichen wird nach Berliner Kalendertag, nicht nach Uhrzeit: eine
+// Anhoerung, die heute um zehn Uhr beginnt, ist bis zum Abend noch der naechste Termin.
+export const bewegungswort=(stamp:string|null|undefined,heute:string):'zuletzt'|'nächster Termin'=>
+ (stamp??'').slice(0,10)>heute?'nächster Termin':'zuletzt';

@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {recency,datumsteil,suchtext} from '../src/ui/format';
+import {recency,datumsteil,suchtext,bewegungswort} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
  url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
@@ -90,4 +90,41 @@ test('Die Fehlerseite ist deutsch und führt zurück',()=>{
  assert.ok(!/This page could not be found/.test(quelle));
  // Eigene Gestaltung, damit die Seite auch ohne das ausgelagerte Stylesheet lesbar bleibt.
  assert.ok(quelle.includes('fontFamily'),'die Seite trägt ihre Gestaltung selbst');
+});
+
+// Die leadOnly-Regel betrifft 10 von 16 Ausschüssen und bestimmt, was in 37 von 41 Dokumenten
+// sichtbar ist - erklärt wurde sie nirgends. Wer im DIP nachschlägt, findet dort mehr Ausschüsse.
+test('Die Regel für Querschnittsausschüsse steht in der Oberfläche',()=>{
+ const quelle=readFileSync('pages/index.tsx','utf8');
+ assert.ok(quelle.includes('zählt nur federführend'),'die Karten müssen es kennzeichnen');
+ assert.ok(quelle.includes('nur, wenn sie federführend sind'),'die Regel muss erklärt werden');
+ assert.ok(quelle.includes('zeigt deshalb oft mehr Ausschüsse'),'der Unterschied zum DIP gehört dazu');
+ assert.ok(quelle.includes('möglicherweise weitere mitberatende'),'auch im Dokument selbst');
+});
+
+// Fünf der sechs bevorstehenden Anhörungen lagen Wochen in der Zukunft; die Karte schrieb
+// "zuletzt 14. Okt. 2026", obwohl heute der 12. September war.
+test('Angekündigte Termine heißen nicht „zuletzt“',()=>{
+ assert.equal(bewegungswort('2026-10-14','2026-09-12'),'nächster Termin');
+ assert.equal(bewegungswort('2026-09-11','2026-09-12'),'zuletzt');
+ assert.equal(bewegungswort('2026-09-12T08:00:00Z','2026-09-12'),'zuletzt','heute ist noch kein künftiger Termin');
+ assert.equal(bewegungswort(undefined,'2026-09-12'),'zuletzt','ohne Datum bleibt es bei der Vergangenheit');
+});
+
+// Auf einem 375px-Telefon blieb die Quellenliste zweispaltig: 137px breite Karten, deren
+// Ueberschrift 157px brauchte. Der Ueberlauf schob das ganze Dokument auf 401px und damit die
+// feste Fussleiste seitlich aus dem Bild.
+test('Die Quellenliste wird auf dem Telefon einspaltig',()=>{
+ const css=readFileSync('src/ui/style.css','utf8');
+ const block=(bedingung:string)=>{
+  const start=css.indexOf('@media('+bedingung+'){');
+  assert.notEqual(start,-1,'Media Query '+bedingung+' fehlt');
+  let tiefe=0,i=css.indexOf('{',start);
+  for(let j=i;j<css.length;j++){if(css[j]==='{')tiefe++;else if(css[j]==='}'){tiefe--;if(!tiefe)return css.slice(i,j);}}
+  throw new Error('unbalancierte Klammern');
+ };
+ assert.match(block('max-width:700px'),/\.source-grid\{grid-template-columns:1fr\}/,'einspaltig ab 700px');
+ assert.match(css,/\.bottom-nav\{grid-template-columns:repeat\(6,minmax\(0,1fr\)\)\}/,'sechs Spalten muessen schrumpfen duerfen');
+ const leiste=css.match(/\.bottom-nav\{[^}]*grid-template-columns:([^;}]+)/g)??[];
+ assert.ok(leiste.length>0&&leiste.every(r=>/repeat\((5|6),minmax\(0,1fr\)\)/.test(r)),'jede Fussleisten-Regel braucht schrumpfbare Spalten: '+leiste.join(' | '));
 });
