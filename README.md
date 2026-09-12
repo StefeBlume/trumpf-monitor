@@ -58,7 +58,7 @@ Abgerufen wird inkrementell über `f.aktualisiert.start`: ab dem letzten erfolgr
 
 **Aufbewahrung.** `RETENTION_DAYS` (Standard 10) entfernt nach jedem erfolgreichen Lauf alles, was älter ist — samt Versionen und Ereignissen. Maßstab ist das Datum des Dokuments selbst (Bewegung laut Quelle, sonst Veröffentlichung, sonst Erstkontakt), nicht der letzte Abruf: sonst blieben monatealte Papiere liegen, nur weil die App sie gestern wiedergesehen hat. Künftige Termine liegen jenseits der Frist und werden nie entfernt. Archiviertes bleibt.
 
-**Zusammenführung.** Dieselbe Drucksache erreicht die App aus zwei Richtungen: als Ausschussüberweisung (mit Gremien, aber nur der Titel durchsucht) und aus der Volltextsuche (mit Themen, aber ohne Gremien). Teilen sich zwei Einträge eine Drucksachennummer, gewinnt die Ausschussquelle und erbt Themen und Ressort der zweiten; die Dublette wird nicht angelegt und ein Rest aus einem früheren Lauf entfernt. So steht jedes Papier genau einmal in der App, mit allen Angaben.
+**Zusammenführung.** Dieselbe Drucksache erreicht die App aus zwei Richtungen: als Ausschussüberweisung (mit Gremien, aber nur der Titel durchsucht) und aus der Volltextsuche (mit Themen, aber ohne Gremien). Nach jedem Lauf geht `deduplicate` über den gesamten Bestand: Einträge mit gleicher Drucksachennummer werden zusammengelegt, der Eintrag mit den meisten Gremien behält die Führung und erbt Themen, Ressorts und Gremien der anderen, die samt Versionen und Ereignissen verschwinden. Ein Durchgang nur innerhalb eines Laufs reichte nicht — die Quellen haben unterschiedliche Zeitfenster, und Altbestand blieb liegen.
 
 ## Setup
 
@@ -153,7 +153,7 @@ NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
 npm test
 ```
 
-67 Tests in vier Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+68 Tests in vier Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
 
 `tests/topics.test.ts` deckt die Themensuche ab: Stimmigkeit des Rasters, Erkennung aller TRUMPF-Kernthemen, Abkürzungen nur in Großschreibung, industrieller Kontext für KI und die breiten Standortbegriffe, deutsche Beugung samt Zeilenumbruch, Zählung und Titelvermerk, Reihenfolge und die Belegqualität.
 

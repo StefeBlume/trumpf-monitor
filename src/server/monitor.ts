@@ -28,11 +28,6 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const veraltet=(d:DocumentInput)=>!!zuAlt&&!!(d.updatedAt??d.publishedAt)&&(d.updatedAt??d.publishedAt)!<zuAlt;
  const all=options.sources??configuredSources();const initial=await dashboard();const existing=new Map(initial.items.map(i=>[i.id,i]));const states=new Map(initial.sources.map(s=>[s.id,s]));
  const updated:Item[]=[];let ok=0,failed=0,manual=0;const errors:string[]=[];
- // Dieselbe Drucksache kommt aus zwei Richtungen: als Ausschussueberweisung (mit Gremien, aber nur
- // Titel durchsucht) und aus der Volltextsuche (mit Themen, aber ohne Gremien). Die erste Quelle
- // gewinnt und erbt die Themen der zweiten; die Dublette wird nicht angelegt und ein Rest aus einem
- // frueheren Lauf entfernt. So steht jedes Papier genau einmal in der App, mit allen Angaben.
- const jeDrucksache=new Map<string,Item>();
  for(const source of all){
  // Das Lobbyregister liefert Akteure statt Dokumente und laeuft deshalb an der Dokumentpruefung vorbei.
  if(source.kind==='lobby'){
@@ -56,25 +51,9 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  for(const doc of new Map(docs.map(d=>[d.externalId,d])).values()){
  if(veraltet(doc))continue;
  const itemId=createHash('sha256').update(source.id+'|'+doc.externalId).digest('hex').slice(0,24);
- const zwilling=doc.documentNumber?jeDrucksache.get(doc.documentNumber):undefined;
- if(zwilling){
- const themen=[...zwilling.topics];
- for(const t of doc.topics)if(!themen.some(x=>x.topic===t.topic))themen.push(t);
- const ressorts=[...new Set([...zwilling.ministries,...doc.ministries])];
- if(themen.length!==zwilling.topics.length||ressorts.length!==zwilling.ministries.length){
- Object.assign(zwilling,{topics:themen,ministries:ressorts});
- statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify(zwilling),zwilling.id]});
- }
- // Auch Versionen und Ereignisse der Dublette entfernen, sonst bleiben sie verwaist zurueck.
- statements.push({sql:'DELETE FROM versions WHERE item_id=?',args:[itemId]},
-  {sql:"DELETE FROM events WHERE json_extract(data,'$.itemId')=?",args:[itemId]},
-  {sql:'DELETE FROM items WHERE id=?',args:[itemId]});
- continue;
- }
  const old=existing.get(itemId),hash=contentHash(doc);
  const change=old?(hash===old.hash?'unchanged':'changed'):(baseline?'baseline':'new');
  const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(hash!==old.hash?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false};
- if(item.documentNumber)jeDrucksache.set(item.documentNumber,item);
  statements.push({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[itemId,source.id,JSON.stringify(item)]});
  if(change!=='unchanged'){
  const event:Event={id:randomUUID(),itemId,title:item.title,at:now,change,sourceId:source.id,version:item.version};
@@ -89,6 +68,7 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  // Renew owner-specific lease between sources.
  await c.execute({sql:'UPDATE locks SET expires=? WHERE id=? AND owner=?',args:[Date.now()+600000,'monitor',id]});
  }
+ if(ok)await deduplicate();
  if(retention>0&&ok)await prune(retention);
  const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated,coverage:{ok,failed,manual},errors};
  // Jeder Lauf wird dokumentiert, sonst zeigt das Lagebild die Meldung eines aelteren Laufs neben
@@ -154,4 +134,38 @@ export async function refreshLobby(fetcher:()=>Promise<LobbyEntry[]>=lobbyEntrie
  await c.batch([{sql:'DELETE FROM lobby',args:[]},
  ...mitVorhaben.map(e=>({sql:'INSERT INTO lobby(register_number,data) VALUES(?,?)',args:[e.registerNumber,JSON.stringify(e)]}))],'write');
  return mitVorhaben.length;
+}
+
+// Dieselbe Drucksache erreicht die App aus zwei Richtungen: als Ausschussueberweisung (mit Gremien,
+// aber nur der Titel durchsucht) und aus der Volltextsuche (mit Themen, aber ohne Gremien). Eine
+// Zusammenfuehrung nur innerhalb eines Laufs reicht nicht - die Quellen haben unterschiedliche
+// Zeitfenster, und Altbestand aus frueheren Laeufen bliebe liegen. Deshalb ein Durchgang ueber den
+// ganzen Bestand: der Eintrag mit den meisten Gremien behaelt die Fuehrung und erbt Themen und
+// Ressorts der anderen, die samt Versionen und Ereignissen verschwinden.
+export async function deduplicate():Promise<number>{
+ const c=await db();
+ const alle:Item[]=(await c.execute('SELECT data FROM items')).rows.map(r=>JSON.parse(String(r.data)));
+ const gruppen=new Map<string,Item[]>();
+ for(const i of alle){if(!i.documentNumber||i.archived)continue;const g=gruppen.get(i.documentNumber)??[];g.push(i);gruppen.set(i.documentNumber,g);}
+ const statements:{sql:string;args:string[]}[]=[];let entfernt=0;
+ for(const gruppe of gruppen.values()){
+  if(gruppe.length<2)continue;
+  const [behalten,...weg]=[...gruppe].sort((a,b)=>b.committees.length-a.committees.length||b.topics.length-a.topics.length||a.firstSeen.localeCompare(b.firstSeen));
+  const themen=[...behalten.topics];
+  const ressorts=new Set(behalten.ministries);
+  const gremien=new Set(behalten.committees);
+  for(const d of weg){
+   for(const t of d.topics)if(!themen.some(x=>x.topic===t.topic))themen.push(t);
+   for(const m of d.ministries)ressorts.add(m);
+   for(const k of d.committees)gremien.add(k);
+   statements.push({sql:'DELETE FROM versions WHERE item_id=?',args:[d.id]},
+    {sql:"DELETE FROM events WHERE json_extract(data,'$.itemId')=?",args:[d.id]},
+    {sql:'DELETE FROM items WHERE id=?',args:[d.id]});
+   entfernt++;
+  }
+  const vereint={...behalten,topics:themen,ministries:[...ressorts],committees:[...gremien]};
+  statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify(vereint),behalten.id]});
+ }
+ if(statements.length)await c.batch(statements,'write');
+ return entfernt;
 }

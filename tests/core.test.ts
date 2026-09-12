@@ -229,6 +229,10 @@ test('Dieselbe Drucksache aus zwei Quellen wird zu einem Eintrag zusammengeführ
   ? [{...doc,externalId:'pos-1',documentNumber:'21/999',committees:['we'],lead:'we',topics:[]}]
   : [{...doc,externalId:'drs-1',documentNumber:'21/999',committees:[],lead:null,ministries:['bmwe'],topics:[]}]});
  assert.equal((await dashboard()).items.length,1);
+ // Auch zeitversetzt: liefert nur noch eine Quelle das Papier, bleibt es ein Eintrag.
+ await runMonitor({sources:[volltext],fetcher:async()=>[{...doc,externalId:'drs-1',documentNumber:'21/999',
+  committees:[],lead:null,ministries:['bmwe'],topics:[]}]});
+ assert.equal((await dashboard()).items.length,1,'kein Wiederauftauchen der Dublette');
  // Die Dublette darf keine verwaisten Versionen oder Ereignisse hinterlassen.
  const {db}=await import('../src/server/db');const c=await db();
  const waisen=await c.execute("SELECT COUNT(*) n FROM versions WHERE item_id NOT IN (SELECT id FROM items)");
@@ -266,4 +270,37 @@ test('Was aelter als die Aufbewahrungsfrist ist, wird gar nicht erst angelegt',a
  const dritt=await runMonitor({sources:[quelle],fetcher:liste,retentionDays:10});
  assert.equal(dritt?.items.length,0);
  assert.equal((await dashboard()).items.length,2,'der Bestand bleibt stabil');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Die laufinterne Zusammenfuehrung reichte nicht: die Quellen haben unterschiedliche Zeitfenster,
+// und Altbestand aus frueheren Laeufen blieb liegen. Live standen dadurch 12 Papiere doppelt.
+test('Altbestand mit doppelter Drucksachennummer wird nachträglich zusammengeführt',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-dedup2-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ try{
+ const {db}=await import('../src/server/db');const c=await db();
+ const {deduplicate}=await import('../src/server/monitor');
+ const bau=(id:string,quelle:string,gremien:string[],themen:string[],ressorts:string[]=[])=>({
+  ...doc,id,sourceId:quelle,institution:'X',hash:id,version:1,change:'unchanged' as const,
+  firstSeen:'2026-09-01T00:00:00.000Z',lastSeen:'2026-09-01T00:00:00.000Z',changedAt:'2026-09-01T00:00:00.000Z',
+  archived:false,documentNumber:'21/777',committees:gremien,lead:gremien[0]??null,ministries:ressorts,
+  topics:themen.map(t=>({topic:t,terms:[t],count:1,inTitle:false,snippet:'…'}))});
+ const a=bau('aaa','dip-committees',['we','um'],[]);
+ const b=bau('bbb','dip-drucksachen',[],['halbleiter','dualuse'],['bmwe']);
+ await c.batch([
+  {sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?)',args:['aaa','dip-committees',JSON.stringify(a)]},
+  {sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?)',args:['bbb','dip-drucksachen',JSON.stringify(b)]},
+  {sql:'INSERT INTO versions(item_id,version,data) VALUES(?,?,?)',args:['bbb',1,JSON.stringify(b)]}
+ ],'write');
+ assert.equal(await deduplicate(),1,'genau eine Dublette faellt weg');
+ const items=(await dashboard()).items;
+ assert.equal(items.length,1);
+ // Der Eintrag mit den meisten Gremien behaelt die Fuehrung und erbt alles andere.
+ assert.equal(items[0].id,'aaa');
+ assert.deepEqual(items[0].committees.sort(),['um','we']);
+ assert.deepEqual(items[0].ministries,['bmwe']);
+ assert.deepEqual(items[0].topics.map(t=>t.topic).sort(),['dualuse','halbleiter']);
+ const waisen=await c.execute("SELECT COUNT(*) n FROM versions WHERE item_id NOT IN (SELECT id FROM items)");
+ assert.equal(Number(waisen.rows[0].n),0);
+ // Ein zweiter Durchgang findet nichts mehr.
+ assert.equal(await deduplicate(),0);
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
