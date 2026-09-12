@@ -33,7 +33,10 @@ export interface LobbyEntry {
  // Erst nach dem Detailabruf gefuellt. detailFor haelt fest, fuer welchen Registerstand das geschah.
  // topicProjects ist die Zahl aller Vorhaben mit Themenbezug - auch derer, die die Kappung
  // nicht mehr mitfuehrt. Ohne sie meldete die Karte "und 8 weitere", obwohl es 29 waren.
- projectList?:LobbyProject[]; detailFor?:string|null; topicProjects?:number;
+ // capAt haelt fest, mit welcher Grenze gespeichert wurde. Ohne diese Angabe behaelt ein
+ // Zwischenspeicher die Kappung einer frueheren Fassung fuer immer: der Eintrag gilt als aktuell,
+ // wird nie neu geholt, und die Karte nennt weiter zu wenige Vorhaben.
+ projectList?:LobbyProject[]; detailFor?:string|null; topicProjects?:number; capAt?:number;
 }
 export function mapProject(p:any):LobbyProject|null{
  const nummer=typeof p?.regulatoryProjectNumber==='string'?p.regulatoryProjectNumber:null;
@@ -134,15 +137,15 @@ export async function enrichProjects(entries:LobbyEntry[],bekannt:Map<string,Lob
  const out:LobbyEntry[]=[];
  for(const e of entries){
   const alt=bekannt.get(e.registerNumber);
-  const aktuell=alt&&alt.detailFor===e.updatedAt&&Array.isArray(alt.projectList);
+  const aktuell=alt&&alt.detailFor===e.updatedAt&&Array.isArray(alt.projectList)&&alt.capAt===MAX_PROJECTS_PER_ENTRY;
   // Auch beim Wiederverwenden filtern: ein gespeicherter Stand aus einer frueheren Fassung enthaelt
   // noch alle Vorhaben. Ohne diesen Filter bliebe der veroeffentlichte Stand gross, weil ein
   // unveraenderter Eintrag gar nicht erst neu abgerufen wird.
-  if(aktuell){const g=withTopics(alt!.projectList!);out.push({...e,projectList:kappen(g),detailFor:alt!.detailFor,topicProjects:alt!.topicProjects??g.length});continue;}
-  if(e.projects===0){out.push({...e,projectList:[],detailFor:e.updatedAt,topicProjects:0});continue;}
-  if(geholt>=grenze){const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length});continue;}
-  try{const ps=await holen(e.registerNumber);geholt++;const g=withTopics(ps);out.push({...e,projectList:kappen(g),detailFor:e.updatedAt,topicProjects:g.length});}
-  catch{const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length});}
+  if(aktuell){const g=withTopics(alt!.projectList!);out.push({...e,projectList:kappen(g),detailFor:alt!.detailFor,topicProjects:alt!.topicProjects??g.length,capAt:MAX_PROJECTS_PER_ENTRY});continue;}
+  if(e.projects===0){out.push({...e,projectList:[],detailFor:e.updatedAt,topicProjects:0,capAt:MAX_PROJECTS_PER_ENTRY});continue;}
+  if(geholt>=grenze){const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length,capAt:alt?.capAt});continue;}
+  try{const ps=await holen(e.registerNumber);geholt++;const g=withTopics(ps);out.push({...e,projectList:kappen(g),detailFor:e.updatedAt,topicProjects:g.length,capAt:MAX_PROJECTS_PER_ENTRY});}
+  catch{const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length,capAt:alt?.capAt});}
  }
  return out;
 }

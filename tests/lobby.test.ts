@@ -188,8 +188,9 @@ test('Gespeicherte Stände aus einer früheren Fassung werden beim Wiederverwend
  // abgerufen werden, blieb der veroeffentlichte Stand gross.
  const mit=mapProject(rohVorhaben)!;
  const ohne={...mit,number:'RV-ohne',topics:[]};
+ // Mit aktueller Kappungsgrenze gespeichert, nur der Themenfilter fehlte.
  const bekannt=new Map([['R1',{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',
-  projectList:[mit,ohne],detailFor:'2026-01-01'}]]);
+  projectList:[mit,ohne],detailFor:'2026-01-01',capAt:MAX_PROJECTS_PER_ENTRY}]]);
  let abrufe=0;
  const stand=await enrichProjects([{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',projects:2}],bekannt,
   async()=>{abrufe++;return [];});
@@ -226,4 +227,23 @@ test('Die Karte nennt alle Vorhaben mit Themenbezug, auch die nicht gespeicherte
  const zweiter=await enrichProjects([{...bau('R1',['ki']),projects:200,updatedAt:stand[0].updatedAt}],bekannt,
   async()=>{throw new Error('darf nicht erneut abrufen');});
  assert.equal(zweiter[0].topicProjects,41);
+});
+
+test('Eine gespeicherte Kappung aus einer früheren Fassung wird neu geholt',async()=>{
+ // Ohne diese Prüfung behält der Zwischenspeicher die alte Grenze für immer: der Eintrag gilt als
+ // aktuell, wird nie neu abgerufen, und die Karte nennt dauerhaft zu wenige Vorhaben.
+ const mit=mapProject(rohVorhaben)!;
+ const alteFassung={...bau('R1',['ki']),projects:200,updatedAt:'2026-01-01',
+  projectList:Array.from({length:12},(_,i)=>({...mit,number:'alt'+i})),detailFor:'2026-01-01',topicProjects:12,capAt:12};
+ let abrufe=0;
+ const neu=await enrichProjects([{...bau('R1',['ki']),projects:200,updatedAt:'2026-01-01'}],
+  new Map([['R1',alteFassung]]),async()=>{abrufe++;return Array.from({length:33},(_,i)=>({...mit,number:'neu'+i}));});
+ assert.equal(abrufe,1,'die veraltete Kappung muss einen Neuabruf auslösen');
+ assert.equal(neu[0].topicProjects,33);
+ assert.equal(neu[0].capAt,MAX_PROJECTS_PER_ENTRY);
+ // Mit aktueller Grenze wird nicht erneut abgerufen.
+ let zweite=0;
+ await enrichProjects([{...bau('R1',['ki']),projects:200,updatedAt:'2026-01-01'}],
+  new Map([['R1',neu[0]]]),async()=>{zweite++;return [];});
+ assert.equal(zweite,0);
 });
