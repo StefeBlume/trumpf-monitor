@@ -37,14 +37,15 @@ export const MINISTRIES:Ministry[] = [
 export const committeeById=(id:string)=>COMMITTEES.find(c=>c.id===id);
 export const committeeByKuerzel=(k:string)=>COMMITTEES.find(c=>c.kuerzel.includes(k));
 export type Change = 'baseline'|'new'|'changed'|'unchanged';
-export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'fulltext-dip'|'committee-agenda'|'committee-events'|'ministry-drafts'|'rss'|'lobby'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number;}
+export interface Source {id:string; name:string; institution:string; url:string; feed?:string; env?:string; kind:'committee-dip'|'fulltext-dip'|'committee-agenda'|'committee-events'|'ministry-drafts'|'rss'|'lobby'|'manual'; note:string; status?:string; checkedAt?:string; error?:string; count?:number; erfassung?:number;}
 export interface DocumentInput {
  externalId:string; title:string; url:string; text:string; publishedAt:string|null;      // Datum des Dokuments bzw. des Termins
  updatedAt:string|null;        // Zeitpunkt der letzten Bewegung laut Quelle; treibt die Sortierung
  documentType:string;          // Drucksachentyp, z. B. Gesetzentwurf, Unterrichtung, Beschlussempfehlung
  step:string|null;             // Verfahrensschritt, z. B. Gesetzentwurf, 1. Beratung, Beschlussempfehlung und Bericht
  procedure:string|null;        // Beratungsstand laut DIP
- documentNumber:string|null;   // Drucksachennummer
+ documentNumber:string|null;   // Drucksachennummer; bei Plenarprotokollen leer - deren Sitzungsnummer benennt kein Papier
+ paperKey?:string|null;        // Identitaet des Papiers, z. B. "BT-Drucksache 21/7984"; nur Drucksachen werden zusammengefuehrt
  pdfUrl:string|null;           // amtliches PDF
  committees:string[];          // ids aus COMMITTEES
  lead:string|null;             // id des federführenden Ausschusses
@@ -54,7 +55,7 @@ export interface DocumentInput {
 }
 export interface Item extends DocumentInput {id:string; sourceId:string; institution:string; hash:string; version:number; change:Change; firstSeen:string; lastSeen:string; changedAt:string; archived:boolean;}
 export interface Event {id:string; itemId:string; title:string; at:string; change:Change; sourceId:string; version:number;}
-export interface Briefing {id:string; createdAt:string; day:string; baseline:boolean; summary:string; items:Item[]; coverage:{ok:number; failed:number; manual:number}; errors:string[];}
+export interface Briefing {id:string; createdAt:string; day:string; baseline:boolean; summary:string; gesamt?:number; items:Item[]; coverage:{ok:number; failed:number; manual:number}; errors:string[];}
 export interface Dashboard {items:Item[]; sources:Source[]; briefings:Briefing[]; events:Event[]; lobby:LobbyEntry[]; serverTime:string; scheduleEnabled:boolean;}
 export const SOURCES:Source[] = [
  {id:'dip-committees',name:'Überweisungen und Beratungsschritte',institution:'Bundestag / Bundesrat',url:'https://dip.bundestag.de/',kind:'committee-dip',env:'DIP_API_KEY',note:'DIP-Vorgangspositionen, gefiltert auf die ausgewählten Ausschüsse. Erfasst Metadaten und Drucksachenlinks, keine PDF-Volltexte.'},

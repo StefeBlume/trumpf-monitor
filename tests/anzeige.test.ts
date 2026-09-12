@@ -195,3 +195,12 @@ test('Keine Reste der Codex-Fassung',()=>{
  assert.ok(!seite.includes('iPhone und Mac müssen denselben Server'),'die iPhone-App ist gelöscht');
  assert.ok(seite.includes('antwortet kein Monitoring-Server'),'die Meldung nennt die tatsächliche Ursache');
 });
+
+// Die Briefingansicht gruppierte nur nach Gremium und Ressort: drei Volltexttreffer eines Laufs erschienen
+// nirgends. Und "22 neue oder geänderte Dokumente" stand über einer Liste von zwölf, ohne Erklärung.
+test('Das Briefing verschweigt weder Einträge ohne Gremium noch gekürzte Listen',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes('<h2>Ohne Gremienzuordnung</h2>'),'Einträge ohne Gremium und Ressort brauchen eine eigene Gruppe');
+ assert.ok(/!i\.committees\.length&&!i\.ministries\.length\)\.map/.test(seite),'die Gruppe zeigt genau diese Einträge');
+ assert.ok(seite.includes('Aufgeführt sind die ersten {briefing.items.length} von {briefing.gesamt} Dokumenten'),'eine gekürzte Liste sagt es');
+});

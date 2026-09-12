@@ -214,8 +214,8 @@ test('Dieselbe Drucksache aus zwei Quellen wird zu einem Eintrag zusammengeführ
  const volltext:Source={id:'dip-drucksachen',name:'V',institution:'Bundestag',url:doc.url,kind:'fulltext-dip',note:'Fixture'};
  try{
  await runMonitor({sources:[ausschuss,volltext],fetcher:async(s)=>s.id==='dip-committees'
-  ? [{...doc,externalId:'pos-1',documentNumber:'21/999',committees:['we'],lead:'we',topics:[]}]
-  : [{...doc,externalId:'drs-1',documentNumber:'21/999',committees:[],lead:null,ministries:['bmwe'],
+  ? [{...doc,externalId:'pos-1',documentNumber:'21/999',paperKey:'BT-Drucksache 21/999',committees:['we'],lead:'we',topics:[]}]
+  : [{...doc,externalId:'drs-1',documentNumber:'21/999',paperKey:'BT-Drucksache 21/999',committees:[],lead:null,ministries:['bmwe'],
       topics:[{topic:'halbleiter',terms:['halbleiter'],count:7,inTitle:false,snippet:'… Halbleiter …'}]}]});
  const items=(await dashboard()).items;
  assert.equal(items.length,1,'das Papier darf nur einmal erscheinen');
@@ -226,11 +226,11 @@ test('Dieselbe Drucksache aus zwei Quellen wird zu einem Eintrag zusammengeführ
  assert.deepEqual(i.topics.map(t=>t.topic),['halbleiter'],'die Themen aus dem Volltext werden vererbt');
  // Ein zweiter Lauf darf die Dublette nicht wieder anlegen.
  await runMonitor({sources:[ausschuss,volltext],fetcher:async(s)=>s.id==='dip-committees'
-  ? [{...doc,externalId:'pos-1',documentNumber:'21/999',committees:['we'],lead:'we',topics:[]}]
-  : [{...doc,externalId:'drs-1',documentNumber:'21/999',committees:[],lead:null,ministries:['bmwe'],topics:[]}]});
+  ? [{...doc,externalId:'pos-1',documentNumber:'21/999',paperKey:'BT-Drucksache 21/999',committees:['we'],lead:'we',topics:[]}]
+  : [{...doc,externalId:'drs-1',documentNumber:'21/999',paperKey:'BT-Drucksache 21/999',committees:[],lead:null,ministries:['bmwe'],topics:[]}]});
  assert.equal((await dashboard()).items.length,1);
  // Auch zeitversetzt: liefert nur noch eine Quelle das Papier, bleibt es ein Eintrag.
- await runMonitor({sources:[volltext],fetcher:async()=>[{...doc,externalId:'drs-1',documentNumber:'21/999',
+ await runMonitor({sources:[volltext],fetcher:async()=>[{...doc,externalId:'drs-1',documentNumber:'21/999',paperKey:'BT-Drucksache 21/999',
   committees:[],lead:null,ministries:['bmwe'],topics:[]}]});
  assert.equal((await dashboard()).items.length,1,'kein Wiederauftauchen der Dublette');
  // Die Dublette darf keine verwaisten Versionen oder Ereignisse hinterlassen.
@@ -282,7 +282,7 @@ test('Altbestand mit doppelter Drucksachennummer wird nachträglich zusammengef�
  const bau=(id:string,quelle:string,gremien:string[],themen:string[],ressorts:string[]=[])=>({
   ...doc,id,sourceId:quelle,institution:'X',hash:id,version:1,change:'unchanged' as const,
   firstSeen:'2026-09-01T00:00:00.000Z',lastSeen:'2026-09-01T00:00:00.000Z',changedAt:'2026-09-01T00:00:00.000Z',
-  archived:false,documentNumber:'21/777',committees:gremien,lead:gremien[0]??null,ministries:ressorts,
+  archived:false,documentNumber:'21/777',paperKey:'BT-Drucksache 21/777',committees:gremien,lead:gremien[0]??null,ministries:ressorts,
   topics:themen.map(t=>({topic:t,terms:[t],count:1,inTitle:false,snippet:'…'}))});
  const a=bau('aaa','dip-committees',['we','um'],[]);
  const b=bau('bbb','dip-drucksachen',[],['halbleiter','dualuse'],['bmwe']);
@@ -314,7 +314,7 @@ test('Stände aus einer früheren Fassung lassen den Lauf nicht abbrechen',async
  // So sah ein Eintrag vor der Themensuche aus: ohne topics, ohne updatedAt.
  const alt:any={id:'alt1',sourceId:'dip-committees',institution:'Bundestag',externalId:'1',
   title:'Altes Papier',url:'https://www.bundestag.de/a',text:'',publishedAt:new Date().toISOString(),
-  documentType:'Gesetzentwurf',step:null,procedure:null,documentNumber:'21/1',pdfUrl:null,
+  documentType:'Gesetzentwurf',step:null,procedure:null,documentNumber:'21/1',paperKey:'BT-Drucksache 21/1',pdfUrl:null,
   lead:null,originator:null,hash:'h',version:1,change:'unchanged',
   firstSeen:new Date().toISOString(),lastSeen:new Date().toISOString(),changedAt:new Date().toISOString()};
  const normal=asItem(alt);
@@ -341,8 +341,8 @@ test('Zusammengeführte Dubletten tauchen nicht bei jedem Lauf erneut als neu au
  const b:Source={id:'dip-drucksachen',name:'B',institution:'Bundestag',url:doc.url,kind:'fulltext-dip',note:'Fixture'};
  // Beide Quellen liefern bei jedem Lauf unveraendert dasselbe Papier.
  const liefern=async(s:Source)=>s.id==='dip-committees'
-  ? [{...doc,externalId:'pos',documentNumber:'21/555',committees:['we'],lead:'we',topics:[]}]
-  : [{...doc,externalId:'drs',documentNumber:'21/555',committees:[],lead:null,ministries:['bmwe'],topics:[]}];
+  ? [{...doc,externalId:'pos',documentNumber:'21/555',paperKey:'BT-Drucksache 21/555',committees:['we'],lead:'we',topics:[]}]
+  : [{...doc,externalId:'drs',documentNumber:'21/555',paperKey:'BT-Drucksache 21/555',committees:[],lead:null,ministries:['bmwe'],topics:[]}];
  try{
  const erst=await runMonitor({sources:[a,b],fetcher:liefern});
  assert.equal(erst?.items.length,1,'das Papier zaehlt einmal');
@@ -396,3 +396,119 @@ test('Alte DIP-Adressen werden beim Lesen repariert',async()=>{
   firstSeen:'2026-09-01T00:00:00.000Z',lastSeen:'2026-09-01T00:00:00.000Z',changedAt:'2026-09-01T00:00:00.000Z',archived:false});
  assert.ok(i.url.endsWith('/338357')&&i.url.split('/').length===6,`repariert: ${i.url}`);
 });
+
+// Eine Nummer allein benennt kein Papier. Die Sammel-Unterrichtung 21/7984 listet 19 verschiedene
+// Berichte; die App behielt den Ruestungsexportbericht und haengte ihm Umwelt, Haushalt und Digitales
+// aus fremden Berichten an. Die anderen 18 verschwanden.
+test('Berichte, die sich ein Sammelpapier teilen, bleiben getrennt',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-sammel-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const ausschuss:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ const bericht=(v:string,titel:string,gremien:string[])=>({...doc,externalId:'pos-'+v,title:titel,url:`https://dip.bundestag.de/vorgang/bericht/${v}`,
+  documentNumber:'21/7984',paperKey:'BT-Drucksache 21/7984',committees:gremien,lead:gremien[0],topics:[]});
+ try{
+ await runMonitor({sources:[ausschuss],fetcher:async()=>[bericht('338561','Rüstungsexportbericht 2025',['we','aa','vt']),
+  bericht('336854','Bericht über den Finanzkraftausgleich',['ha']),bericht('337524','Bericht über die Vorplanung',['um'])]});
+ const items=(await dashboard()).items;
+ assert.equal(items.length,3,'drei Berichte, drei Einträge');
+ assert.deepEqual(items.find(i=>i.title.startsWith('Rüstungsexport'))!.committees.sort(),['aa','vt','we'],'keine Ausschüsse aus fremden Berichten');
+ const {deduplicate}=await import('../src/server/monitor');
+ assert.equal(await deduplicate(),0,'auch die Bestandsbereinigung lässt Sammelpapiere getrennt');
+ assert.equal((await dashboard()).items.length,3);
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// "21/90" ist im DIP eine Bundesrats-Verordnung, eine Kleine Anfrage und das Plenarprotokoll der 90.
+// Sitzung. Die App zeigte Debatten als "Drs. 21/90" und fuehrte alle Debatten einer Sitzung zusammen.
+test('Ein Plenarprotokoll ist keine Drucksache, und Bundestag und Bundesrat zählen getrennt',async()=>{
+ const debatte=mapCommitteePosition({...position,vorgangsposition:'Beratung',fundstelle:{id:'5806',dokumentnummer:'21/90',dokumentart:'Plenarprotokoll',herausgeber:'BT',urheber:[],pdf_url:'https://dserver.bundestag.de/btp/21/21090.pdf#P.11199'}})!;
+ assert.equal(debatte.documentNumber,null,'die Sitzungsnummer darf nicht als Drucksache erscheinen');
+ assert.equal(debatte.paperKey,null,'und führt nichts zusammen');
+ assert.equal(mapCommitteePosition({...position,fundstelle:{...position.fundstelle,dokumentart:'Drucksache',herausgeber:'BR'}})!.paperKey,'BR-Drucksache 426/26');
+ assert.equal(mapFulltextDrucksache({id:'9',titel:'Verordnung',herausgeber:'BT',dokumentart:'Drucksache',dokumentnummer:'21/26',fundstelle:{urheber:['Bundesministerium für Wirtschaft und Energie']}})!.paperKey,'BT-Drucksache 21/26');
+ const {asItem}=await import('../src/server/monitor');
+ assert.equal(asItem({...doc,documentNumber:'21/90',pdfUrl:'https://dserver.bundestag.de/btp/21/21090.pdf#P.1'}).documentNumber,null,'gespeicherte Stände zeigen die falsche Nummer nicht mehr');
+ assert.equal(asItem({...doc,documentNumber:'21/7984',pdfUrl:'https://dserver.bundestag.de/btd/21/079/2107984.pdf'}).documentNumber,'21/7984');
+});
+
+// Nachgestellt aus dem Live-Bestand: "Gasbohrungen in Deutschland beenden" (aktualisiert vor acht Tagen)
+// wurde in eine Debatte aus dem Vorjahr unter derselben Nummer eingearbeitet. Die Aufbewahrung loeschte
+// den alten Eintrag - und die frische Bewegung mit ihm. Der Lauf meldete nichts, der Bestand war leer.
+test('Eine frische Bewegung verschwindet nicht mit einem alten Zwilling',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-zwilling-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const tage=(n:number)=>new Date(Date.now()-n*86400000).toISOString();
+ const ausschuss:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ const eintrag=(id:string,quelle:string,url:string,aktualisiert:string)=>({...doc,id,externalId:id,url,sourceId:quelle,institution:'X',hash:id,version:1,change:'unchanged' as const,
+  firstSeen:tage(20),lastSeen:tage(20),changedAt:tage(20),archived:false,publishedAt:tage(25),updatedAt:aktualisiert,paperKey:'BT-Drucksache 21/4711',documentNumber:'21/4711',topics:[]});
+ try{
+ const {db}=await import('../src/server/db');const c=await db();
+ // Fall 1: derselbe Vorgang aus der Volltextsuche liegt alt im Bestand - zusammenfuehren, aber mit dem neuen Datum.
+ const alt=eintrag('alt','dip-drucksachen','https://dip.bundestag.de/drucksache/x/1',tage(20));
+ await c.execute({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?)',args:['alt','dip-drucksachen',JSON.stringify(alt)]});
+ await runMonitor({sources:[ausschuss],fetcher:async()=>[{...doc,externalId:'frisch',url:'https://dip.bundestag.de/vorgang/gas/2',publishedAt:tage(9),updatedAt:tage(8),paperKey:'BT-Drucksache 21/4711',documentNumber:'21/4711',topics:[]}],retentionDays:10});
+ let items=(await dashboard()).items;
+ assert.equal(items.length,1,'das Papier bleibt erhalten');
+ assert.equal(items[0].updatedAt?.slice(0,10),tage(8).slice(0,10),'der Eintrag trägt die frische Bewegung, nicht das Datum des alten Zwillings');
+ assert.equal(items[0].id,'alt','zusammengeführt in den bestehenden Eintrag, kein zweiter');
+ // Fall 2: ein anderer Vorgang unter derselben Nummer - getrennt, das frische Papier bleibt.
+ await c.execute('DELETE FROM items');
+ const fremd=eintrag('fremd','dip-committees','https://dip.bundestag.de/vorgang/debatte/1',tage(20));
+ await c.execute({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?)',args:['fremd','dip-committees',JSON.stringify(fremd)]});
+ await runMonitor({sources:[ausschuss],fetcher:async()=>[{...doc,externalId:'frisch2',title:'Gasbohrungen in Deutschland beenden',url:'https://dip.bundestag.de/vorgang/gas/2',publishedAt:tage(9),updatedAt:tage(8),paperKey:'BT-Drucksache 21/4711',documentNumber:'21/4711',topics:[]}],retentionDays:10});
+ items=(await dashboard()).items;
+ assert.deepEqual(items.map(i=>i.title),['Gasbohrungen in Deutschland beenden'],'der alte fremde Eintrag altert aus, der frische bleibt');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Nach einem erfolgreichen Lauf reicht der Rueckblick zwei Tage. Was eine fruehere Fassung der Zuordnung
+// verworfen oder falsch zusammengefuehrt hat, kam dadurch nie zurueck.
+test('Eine neue Erfassungslogik holt das volle Fenster einmal nach',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-erfassung-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const quelle:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ const fenster:number[]=[];
+ const holen=async(_s:Source,since:string)=>{fenster.push(Math.round((Date.now()-Date.parse(since))/86400000));return [] as DocumentInput[];};
+ try{
+ await runMonitor({sources:[quelle],fetcher:holen});
+ await runMonitor({sources:[quelle],fetcher:holen});
+ const {db}=await import('../src/server/db');const c=await db();
+ // So sah der Stand vor der Umstellung aus: erfolgreich, aber ohne Erfassungsstand.
+ await c.execute({sql:"UPDATE source_state SET data=json_remove(data,'$.erfassung') WHERE id=?",args:['dip-committees']});
+ await runMonitor({sources:[quelle],fetcher:holen});
+ await runMonitor({sources:[quelle],fetcher:holen});
+ assert.deepEqual(fenster,[14,2,14,2],'voll, inkrementell, nach der Umstellung einmal voll, dann wieder inkrementell');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Nach der Reparatur der DIP-Adressen trug der Bestand Hashes, die ueber die alte Adresse gebildet
+// waren. Als die Quelle dieselben Papiere erneut lieferte, galten 78 unveraenderte auf einen Schlag als
+// "geaendert" - jedes mit neuer Version und Eintrag im Aenderungslog.
+test('Eine frühere Darstellung desselben Inhalts gilt nicht als Änderung',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-phantom-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const quelle:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ try{
+ const {db}=await import('../src/server/db');const c=await db();
+ await runMonitor({sources:[quelle],fetcher:async()=>[{...doc,externalId:'p1'}]});
+ // Gleicher Inhalt, aber ein Hash aus einer frueheren Fassung.
+ await c.execute("UPDATE items SET data=json_set(data,'$.hash','aus-frueherer-fassung')");
+ const lauf=await runMonitor({sources:[quelle],fetcher:async()=>[{...doc,externalId:'p1'}]});
+ assert.equal(lauf?.items.length,0,'nichts ist geändert');
+ let i=(await dashboard()).items[0];
+ assert.equal(i.version,1,'keine neue Version');
+ assert.notEqual(i.hash,'aus-frueherer-fassung','der Hash wird still nachgezogen');
+ const ereignisse=await c.execute("SELECT COUNT(*) n FROM events WHERE json_extract(data,'$.change')='changed'");
+ assert.equal(Number(ereignisse.rows[0].n),0,'kein Eintrag im Änderungslog');
+ // Eine echte Aenderung bleibt eine.
+ const echt=await runMonitor({sources:[quelle],fetcher:async()=>[{...doc,externalId:'p1',step:'Beschlussempfehlung'}]});
+ assert.equal(echt?.items[0]?.change,'changed');
+ i=(await dashboard()).items[0];
+ assert.equal(i.version,2);
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Ausgeliefert werden je Briefing zwoelf Eintraege. Die Zusammenfassung nannte 22, die Liste zeigte 12 -
+// ohne Hinweis. Das Briefing merkt sich deshalb seine volle Groesse.
+test('Ein gekürztes Briefing kennt seine volle Größe',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-groesse-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const quelle:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ try{
+ const lauf=await runMonitor({sources:[quelle],fetcher:async()=>Array.from({length:15},(_,n)=>({...doc,externalId:'d'+n,title:'Papier '+n,documentNumber:'21/'+(500+n)}))});
+ assert.equal(lauf?.gesamt,15);
+ const b=(await dashboard()).briefings[0];
+ assert.equal(b.items.length,12,'ausgeliefert werden zwölf');
+ assert.equal(b.gesamt,15,'die volle Zahl bleibt erhalten');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});

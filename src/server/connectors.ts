@@ -59,13 +59,21 @@ async function dipPages(endpoint:string,since:string,onPage:(docs:any[])=>void,m
 }
 const iso=(d:unknown)=>typeof d==='string'&&!isNaN(Date.parse(d))?new Date(d).toISOString():null;
 // Überweisungen in die kuratierten Ausschüsse. Alles andere wird verworfen, bevor es in die App kommt.
+// Eine Nummer allein benennt kein Papier. "21/90" ist im DIP zugleich eine Bundesrats-Verordnung von
+// 1990, eine Kleine Anfrage des Bundestages und das Plenarprotokoll der 90. Sitzung, auf das 85
+// Positionen verschiedener Vorgaenge verweisen. Zusammengefuehrt werden duerfen deshalb nur Drucksachen,
+// und nur mit Herausgeber: Bundestag und Bundesrat fuehren eigene Nummernkreise.
+export function papierschluessel(herausgeber:unknown,dokumentart:unknown,nummer:unknown):string|null{
+ return dokumentart==='Drucksache'&&(herausgeber==='BT'||herausgeber==='BR')&&typeof nummer==='string'&&nummer.trim()
+  ?`${herausgeber}-Drucksache ${clean(nummer)}`:null;
+}
 export function mapCommitteePosition(d:any):DocumentInput|null{
  const referrals:{id:string;lead:boolean}[]=(Array.isArray(d?.ueberweisung)?d.ueberweisung as any[]:[]).flatMap((u:any)=>{const c=committeeByKuerzel(String(u?.ausschuss_kuerzel??''));const lead=u?.federfuehrung===true;return c&&(lead||!c.leadOnly)?[{id:c.id,lead}]:[];});
  if(!referrals.length||!d?.id||!d?.titel)return null;
  const f=d.fundstelle??{};
  return {externalId:String(d.id),title:clean(d.titel),url:d.vorgang_id?dipUrl('vorgang',d.vorgang_id,clean(d.titel)):f.id?dipUrl('drucksache',f.id,clean(d.titel)):`https://dip.bundestag.de/suche?f.id=${encodeURIComponent(String(d.id))}`,
  text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(f.drucksachetyp??d.dokumentart??'Vorgangsposition'),step:d.vorgangsposition?clean(d.vorgangsposition):null,
- procedure:d.vorgangstyp?clean(d.vorgangstyp):null,documentNumber:f.dokumentnummer?clean(f.dokumentnummer):null,pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
+ procedure:d.vorgangstyp?clean(d.vorgangstyp):null,documentNumber:f.dokumentnummer&&f.dokumentart!=='Plenarprotokoll'?clean(f.dokumentnummer):null,paperKey:papierschluessel(f.herausgeber,f.dokumentart,f.dokumentnummer),pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
  committees:[...new Set(referrals.map(r=>r.id))],lead:referrals.find(r=>r.lead)?.id??null,ministries:[],topics:scanTopics(clean(d.titel)),
  originator:(Array.isArray(f.urheber)?f.urheber:[]).map((u:unknown)=>clean(u)).join(', ')||null};
 }
@@ -87,7 +95,7 @@ export function mapFulltextDrucksache(d:any):DocumentInput|null{
  if(!hit.length&&!topics.length)return null;
  return {externalId:String(d.id),title,url:dipUrl('drucksache',d.id,title),
  text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(d.drucksachetyp??d.dokumentart??'Drucksache'),
- step:null,procedure:null,documentNumber:d.dokumentnummer?clean(d.dokumentnummer):null,
+ step:null,procedure:null,documentNumber:d.dokumentnummer?clean(d.dokumentnummer):null,paperKey:papierschluessel(d.herausgeber,d.dokumentart,d.dokumentnummer),
  pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
  committees:[],lead:null,ministries:hit.map(m=>m.id),originator:originators.join(', ')||null,topics};
 }

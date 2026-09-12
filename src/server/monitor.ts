@@ -12,10 +12,27 @@ export function repariereDipAdresse(url:string,titel:string):string{
  const m=KURZE_DIP.exec(url??'');
  return m?dipUrl(m[1] as 'vorgang'|'drucksache',m[2],titel):url;
 }
+// Die Vorgangs-ID steht in jeder DIP-Vorgangsadresse. Sie trennt Papiere, die sich eine Drucksache
+// teilen: auf die Sammel-Unterrichtung 21/7984 verweisen 19 verschiedene Berichte.
+export const vorgangsId=(url:string)=>/^https:\/\/dip\.bundestag\.de\/vorgang\/[^/]+\/(\d+)/.exec(url??'')?.[1]??null;
+// Ein Papier, auf das mehrere Vorgaenge verweisen, ist ein Sammelpapier. Darunter wird nichts
+// zusammengefuehrt - sonst behielt die App einen Bericht und haengte ihm die Ausschuesse der anderen an.
+function sammelpapiere(items:Pick<DocumentInput,'paperKey'|'url'>[]):Set<string>{
+ const je=new Map<string,Set<string>>();
+ for(const i of items){const v=vorgangsId(i.url);if(!i.paperKey||!v)continue;if(!je.has(i.paperKey))je.set(i.paperKey,new Set());je.get(i.paperKey)!.add(v);}
+ return new Set([...je].filter(([,v])=>v.size>1).map(([k])=>k));
+}
+// Aendert sich die Auswahl- oder Zuordnungslogik, holt der naechste Lauf das volle Fenster neu. Der
+// Rueckblick nach einem erfolgreichen Lauf reicht nur zwei Tage; was eine fruehere Fassung verworfen
+// oder falsch zusammengefuehrt hat, kaeme sonst nie wieder.
+export const ERFASSUNGSSTAND=2;
+const neuer=(a:string|null|undefined,b:string|null|undefined):string|null=>!a?(b??null):!b?a:a>b?a:b;
 export function asItem(raw:unknown):Item{
  const i=raw as Partial<Item>;
  return {...(i as Item),
   url:typeof i.url==='string'?repariereDipAdresse(i.url,i.title??''):(i.url??''),
+  // Plenarprotokolle trugen ihre Sitzungsnummer als "Drs." - unter dieser Nummer steht eine andere Drucksache.
+  documentNumber:typeof i.pdfUrl==='string'&&/dserver\.bundestag\.de\/b[tr]p\//.test(i.pdfUrl)?null:(i.documentNumber??null),
   topics:Array.isArray(i.topics)?i.topics:[],
   committees:Array.isArray(i.committees)?i.committees:[],
   ministries:Array.isArray(i.ministries)?i.ministries:[],
@@ -57,8 +74,9 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  // nicht nachtraeglich durch Loeschen: ein geloeschter Eintrag wird von seiner Quelle beim naechsten
  // Lauf erneut geliefert, gilt als neu, wird wieder geloescht - ein Kreislauf, der das Briefing
  // dauerhaft mit denselben Dokumenten fuellte.
- const jeDrucksache=new Map<string,Item>();
- for(const i of initial.items)if(i.documentNumber&&!i.archived)jeDrucksache.set(i.documentNumber,i);
+ // Schluessel ist das Papier, nicht die Nummer: "21/90" benennt im DIP drei verschiedene Dokumente.
+ const jePapier=new Map<string,Item>();
+ for(const i of initial.items)if(i.paperKey&&!i.archived)jePapier.set(i.paperKey,i);
  const updated:Item[]=[];let ok=0,failed=0,manual=0;const errors:string[]=[];
  for(const source of all){
  // Das Lobbyregister liefert Akteure statt Dokumente und laeuft deshalb an der Dokumentpruefung vorbei.
@@ -76,31 +94,41 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  if(source.kind==='manual'||(source.env&&!process.env[source.env]&&source.kind!=='rss'&&!options.fetcher)){manual++;continue;}
  const now=new Date().toISOString();
  try{
- const since=lookbackStart(states.get(source.id)?.status==='ok'?states.get(source.id)?.checkedAt:undefined);
+ const stand=states.get(source.id);
+ const since=lookbackStart(stand?.status==='ok'&&stand.erfassung===ERFASSUNGSSTAND?stand.checkedAt:undefined);
  let warning:string|null=null;
  const docs=await(options.fetcher??ingest)(source,since,(note:string)=>{warning=note;});
+ const sammel=sammelpapiere([...initial.items,...updated,...docs]);
  const baseline=!states.get(source.id)?.checkedAt&&!initial.items.some(i=>i.sourceId===source.id);
  const statements:any[]=[];const sourceUpdates:Item[]=[];
  for(const doc of new Map(docs.map(d=>[d.externalId,d])).values()){
  if(veraltet(doc))continue;
  const itemId=createHash('sha256').update(source.id+'|'+doc.externalId).digest('hex').slice(0,24);
- const zwilling=doc.documentNumber?jeDrucksache.get(doc.documentNumber):undefined;
- if(zwilling&&zwilling.id!==itemId){
+ const zwilling=doc.paperKey&&!sammel.has(doc.paperKey)?jePapier.get(doc.paperKey):undefined;
+ const fremderVorgang=!!zwilling&&!!vorgangsId(doc.url)&&!!vorgangsId(zwilling.url)&&vorgangsId(doc.url)!==vorgangsId(zwilling.url);
+ if(zwilling&&!fremderVorgang&&zwilling.id!==itemId){
  // In den fuehrenden Eintrag einarbeiten, statt einen zweiten anzulegen.
  const themen=[...zwilling.topics];
  for(const t of doc.topics)if(!themen.some(x=>x.topic===t.topic))themen.push(t);
  const gremien=[...new Set([...zwilling.committees,...doc.committees])];
  const ressorts=[...new Set([...zwilling.ministries,...doc.ministries])];
- if(themen.length!==zwilling.topics.length||gremien.length!==zwilling.committees.length||ressorts.length!==zwilling.ministries.length){
- Object.assign(zwilling,{topics:themen,committees:gremien,ministries:ressorts,lead:zwilling.lead??doc.lead});
+ // Das juengere Datum gewinnt. Behielt der Zwilling sein altes, loeschte ihn die Aufbewahrung - und mit
+ // ihm die frische Bewegung, die gerade eingearbeitet worden war.
+ const zuletzt=neuer(zwilling.updatedAt,doc.updatedAt??doc.publishedAt);
+ if(themen.length!==zwilling.topics.length||gremien.length!==zwilling.committees.length||ressorts.length!==zwilling.ministries.length||zuletzt!==zwilling.updatedAt){
+ Object.assign(zwilling,{topics:themen,committees:gremien,ministries:ressorts,lead:zwilling.lead??doc.lead,updatedAt:zuletzt});
  statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify(zwilling),zwilling.id]});
  }
  continue;
  }
  const old=existing.get(itemId),hash=contentHash(doc);
- const change=old?(hash===old.hash?'unchanged':'changed'):(baseline?'baseline':'new');
- const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(hash!==old.hash?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false};
- if(item.documentNumber)jeDrucksache.set(item.documentNumber,item);
+ // Gleich ist, was die Quelle unveraendert liefert - auch wenn der gespeicherte Hash aus einer frueheren
+ // Darstellung stammt. Nach der Reparatur der DIP-Adressen galten sonst 78 unveraenderte Papiere auf
+ // einen Schlag als "geaendert", mit neuer Version und Eintrag im Aenderungslog.
+ const gleich=!!old&&(hash===old.hash||hash===contentHash(old));
+ const change=old?(gleich?'unchanged':'changed'):(baseline?'baseline':'new');
+ const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(change==='changed'?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false};
+ if(item.paperKey)jePapier.set(item.paperKey,item);
  statements.push({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[itemId,source.id,JSON.stringify(item)]});
  if(change!=='unchanged'){
  const event:Event={id:randomUUID(),itemId,title:item.title,at:now,change,sourceId:source.id,version:item.version};
@@ -109,7 +137,7 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  }
  }
  // Ein leeres Ergebnis ist hier eine gültige Aussage: im Fenster wurde nichts Passendes überwiesen oder veröffentlicht.
- statements.push({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:warning?'partial':'ok',checkedAt:now,count:docs.length,error:warning,since})]});
+ statements.push({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:warning?'partial':'ok',checkedAt:now,count:docs.length,error:warning,since,erfassung:ERFASSUNGSSTAND})]});
  await c.batch(statements,'write');updated.push(...sourceUpdates);ok++;if(warning)errors.push(`${source.institution}: ${warning}`);
  }catch(e){failed++;const error=e instanceof Error?e.message:'Abruf fehlgeschlagen';errors.push(`${source.institution}: ${error}`);await c.execute({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:'error',checkedAt:states.get(source.id)?.checkedAt??null,count:states.get(source.id)?.count??0,error})]});}
  // Renew owner-specific lease between sources.
@@ -119,7 +147,7 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  if(retention>0&&ok)await prune(retention,[...new Set([...configuredSources().map(s=>s.id),...all.map(s=>s.id)])]);
  // Das Briefing traegt die Dokumente mit; bei einem Erstimport waren das 184 KB. Gespeichert werden
  // hoechstens 40, ausgeliefert davon zwoelf - die Gesamtzahl steht in der Zusammenfassung.
- const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),items:updated.slice(0,40),coverage:{ok,failed,manual},errors};
+ const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),gesamt:updated.length,items:updated.slice(0,40),coverage:{ok,failed,manual},errors};
  // Jeder Lauf wird dokumentiert, sonst zeigt das Lagebild die Meldung eines aelteren Laufs neben
  // dem Zeitstempel des juengsten - genau dieser Widerspruch war in der Oberflaeche sichtbar.
  // Damit die Liste nicht zulaeuft, ersetzt ein Lauf ohne Aenderung den vorherigen Leerlauf des Tages.
@@ -202,7 +230,8 @@ export async function deduplicate():Promise<number>{
  const c=await db();
  const alle:Item[]=(await c.execute('SELECT data FROM items')).rows.map(r=>asItem(JSON.parse(String(r.data))));
  const gruppen=new Map<string,Item[]>();
- for(const i of alle){if(!i.documentNumber||i.archived)continue;const g=gruppen.get(i.documentNumber)??[];g.push(i);gruppen.set(i.documentNumber,g);}
+ const sammel=sammelpapiere(alle);
+ for(const i of alle){if(!i.paperKey||i.archived||sammel.has(i.paperKey))continue;const g=gruppen.get(i.paperKey)??[];g.push(i);gruppen.set(i.paperKey,g);}
  const statements:{sql:string;args:string[]}[]=[];let entfernt=0;
  for(const gruppe of gruppen.values()){
   if(gruppe.length<2)continue;
@@ -210,16 +239,18 @@ export async function deduplicate():Promise<number>{
   const themen=[...behalten.topics];
   const ressorts=new Set(behalten.ministries);
   const gremien=new Set(behalten.committees);
+  let zuletzt=behalten.updatedAt;
   for(const d of weg){
    for(const t of d.topics)if(!themen.some(x=>x.topic===t.topic))themen.push(t);
    for(const m of d.ministries)ressorts.add(m);
    for(const k of d.committees)gremien.add(k);
+   zuletzt=neuer(zuletzt,d.updatedAt);
    statements.push({sql:'DELETE FROM versions WHERE item_id=?',args:[d.id]},
     {sql:"DELETE FROM events WHERE json_extract(data,'$.itemId')=?",args:[d.id]},
     {sql:'DELETE FROM items WHERE id=?',args:[d.id]});
    entfernt++;
   }
-  const vereint={...behalten,topics:themen,ministries:[...ressorts],committees:[...gremien]};
+  const vereint={...behalten,topics:themen,ministries:[...ressorts],committees:[...gremien],updatedAt:zuletzt};
   statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify(vereint),behalten.id]});
  }
  if(statements.length)await c.batch(statements,'write');
