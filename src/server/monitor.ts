@@ -2,8 +2,19 @@ import {randomUUID,createHash} from 'node:crypto';
 import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
 import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash} from './parsing';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
+// Stände aus einer früheren Fassung tragen neuere Felder noch nicht. Jeder Leser bekommt deshalb
+// vollständige Listen, statt an einem fehlenden Feld zu scheitern - genau daran brach ein Lauf ab.
+export function asItem(raw:unknown):Item{
+ const i=raw as Partial<Item>;
+ return {...(i as Item),
+  topics:Array.isArray(i.topics)?i.topics:[],
+  committees:Array.isArray(i.committees)?i.committees:[],
+  ministries:Array.isArray(i.ministries)?i.ministries:[],
+  updatedAt:i.updatedAt??null,publishedAt:i.publishedAt??null,
+  archived:i.archived===true};
+}
 export function berlinClock(date=new Date()){const parts=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(date);const get=(t:string)=>parts.find(p=>p.type===t)!.value;return {day:`${get('year')}-${get('month')}-${get('day')}`,hour:Number(get('hour'))};}
-export async function dashboard():Promise<Dashboard>{const c=await db();const [items,states,briefings,events,lobby]=await Promise.all([c.execute('SELECT data FROM items'),c.execute('SELECT id,data FROM source_state'),c.execute('SELECT data FROM briefings ORDER BY rowid DESC LIMIT 60'),c.execute('SELECT data FROM events ORDER BY rowid DESC LIMIT 300'),c.execute('SELECT data FROM lobby')]);const state=new Map(states.rows.map(s=>[s.id,JSON.parse(String(s.data))]));return {items:items.rows.map(r=>JSON.parse(String(r.data))),sources:configuredSources().map(s=>({...s,...state.get(s.id),status:state.get(s.id)?.status??(s.kind==='manual'?'manual':s.env&&!process.env[s.env]&&s.kind!=='rss'?'setup':'pending')})),briefings:briefings.rows.map(r=>JSON.parse(String(r.data))).sort((a:Briefing,b:Briefing)=>b.createdAt.localeCompare(a.createdAt)),events:events.rows.map(r=>JSON.parse(String(r.data))).sort((a:Event,b:Event)=>b.at.localeCompare(a.at)),lobby:lobby.rows.map(r=>JSON.parse(String(r.data))),serverTime:new Date().toISOString(),scheduleEnabled:process.env.SCHEDULE_ENABLED==='true'};}
+export async function dashboard():Promise<Dashboard>{const c=await db();const [items,states,briefings,events,lobby]=await Promise.all([c.execute('SELECT data FROM items'),c.execute('SELECT id,data FROM source_state'),c.execute('SELECT data FROM briefings ORDER BY rowid DESC LIMIT 60'),c.execute('SELECT data FROM events ORDER BY rowid DESC LIMIT 300'),c.execute('SELECT data FROM lobby')]);const state=new Map(states.rows.map(s=>[s.id,JSON.parse(String(s.data))]));return {items:items.rows.map(r=>asItem(JSON.parse(String(r.data)))),sources:configuredSources().map(s=>({...s,...state.get(s.id),status:state.get(s.id)?.status??(s.kind==='manual'?'manual':s.env&&!process.env[s.env]&&s.kind!=='rss'?'setup':'pending')})),briefings:briefings.rows.map(r=>JSON.parse(String(r.data))).sort((a:Briefing,b:Briefing)=>b.createdAt.localeCompare(a.createdAt)),events:events.rows.map(r=>JSON.parse(String(r.data))).sort((a:Event,b:Event)=>b.at.localeCompare(a.at)),lobby:lobby.rows.map(r=>JSON.parse(String(r.data))),serverTime:new Date().toISOString(),scheduleEnabled:process.env.SCHEDULE_ENABLED==='true'};}
 export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed:number,manual:number):string{
  if(!ok)return 'Keine belastbare Aussage: Es konnte keine Quelle erfolgreich geprüft werden.';
  const changes=updated.filter(i=>i.change!=='baseline');
@@ -79,8 +90,8 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  return b;
  }finally{await c.execute({sql:'DELETE FROM locks WHERE id=? AND owner=?',args:['monitor',id]});}
 }
-export async function history(itemId:string){const c=await db();const r=await c.execute({sql:'SELECT data FROM versions WHERE item_id=? ORDER BY version DESC',args:[itemId]});const versions:Item[]=r.rows.map(r=>JSON.parse(String(r.data)));const render=(v:Item)=>[v.title,v.documentType,v.step??'',v.procedure??'',v.documentNumber??'',v.text].join('\n');return {versions,diff:versions.length>1?diffWords(render(versions[1]),render(versions[0])):[]};}
-export async function archive(itemId:string,archived:boolean){const c=await db();const row=await c.execute({sql:'SELECT data FROM items WHERE id=?',args:[itemId]});if(!row.rows.length)throw new Error('Treffer nicht gefunden');const item=JSON.parse(String(row.rows[0].data));await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...item,archived}),itemId]});}
+export async function history(itemId:string){const c=await db();const r=await c.execute({sql:'SELECT data FROM versions WHERE item_id=? ORDER BY version DESC',args:[itemId]});const versions:Item[]=r.rows.map(r=>asItem(JSON.parse(String(r.data))));const render=(v:Item)=>[v.title,v.documentType,v.step??'',v.procedure??'',v.documentNumber??'',v.text].join('\n');return {versions,diff:versions.length>1?diffWords(render(versions[1]),render(versions[0])):[]};}
+export async function archive(itemId:string,archived:boolean){const c=await db();const row=await c.execute({sql:'SELECT data FROM items WHERE id=?',args:[itemId]});if(!row.rows.length)throw new Error('Treffer nicht gefunden');const item=asItem(JSON.parse(String(row.rows[0].data)));await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...item,archived}),itemId]});}
 
 // Die Datenbank ist ableitbarer Zwischenstand und wird nicht versioniert. Fehlt sie - etwa weil der
 // Zwischenspeicher des Zeitplans verfallen ist -, wird sie aus dem veroeffentlichten Stand aufgebaut,
@@ -93,8 +104,8 @@ export async function seedFromSnapshot(snapshot:{items?:Item[];events?:Event[];b
  await c.batch([
  // Auch je einen Versionsstand anlegen: sonst faellt nach dem Wiederaufbau der erste Vergleich aus,
  // weil die naechste Aenderung nichts hat, wogegen sie sich vergleichen liesse.
- ...items.map(i=>({sql:'INSERT OR REPLACE INTO versions(item_id,version,data) VALUES(?,?,?)',args:[i.id,i.version,JSON.stringify({...i,change:'unchanged' as const})]})),
- ...items.map(i=>({sql:'INSERT OR REPLACE INTO items(id,source_id,data) VALUES(?,?,?)',args:[i.id,i.sourceId,JSON.stringify({...i,change:'unchanged' as const})]})),
+ ...items.map(i=>({sql:'INSERT OR REPLACE INTO versions(item_id,version,data) VALUES(?,?,?)',args:[i.id,i.version,JSON.stringify({...asItem(i),change:'unchanged' as const})]})),
+ ...items.map(i=>({sql:'INSERT OR REPLACE INTO items(id,source_id,data) VALUES(?,?,?)',args:[i.id,i.sourceId,JSON.stringify({...asItem(i),change:'unchanged' as const})]})),
  ...(snapshot.events??[]).map(e=>({sql:'INSERT OR REPLACE INTO events(id,run_id,data) VALUES(?,?,?)',args:[e.id,'snapshot',JSON.stringify(e)]})),
  ...(snapshot.briefings??[]).map(b=>({sql:'INSERT OR REPLACE INTO briefings(id,day,data) VALUES(?,?,?)',args:[b.id,b.day,JSON.stringify(b)]}))
  ],'write');
@@ -144,7 +155,7 @@ export async function refreshLobby(fetcher:()=>Promise<LobbyEntry[]>=lobbyEntrie
 // Ressorts der anderen, die samt Versionen und Ereignissen verschwinden.
 export async function deduplicate():Promise<number>{
  const c=await db();
- const alle:Item[]=(await c.execute('SELECT data FROM items')).rows.map(r=>JSON.parse(String(r.data)));
+ const alle:Item[]=(await c.execute('SELECT data FROM items')).rows.map(r=>asItem(JSON.parse(String(r.data))));
  const gruppen=new Map<string,Item[]>();
  for(const i of alle){if(!i.documentNumber||i.archived)continue;const g=gruppen.get(i.documentNumber)??[];g.push(i);gruppen.set(i.documentNumber,g);}
  const statements:{sql:string;args:string[]}[]=[];let entfernt=0;

@@ -304,3 +304,30 @@ test('Altbestand mit doppelter Drucksachennummer wird nachträglich zusammengef�
  // Ein zweiter Durchgang findet nichts mehr.
  assert.equal(await deduplicate(),0);
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Ein Stand aus einer frueheren Fassung traegt neuere Felder nicht. In CI kam die Datenbank aus dem
+// Zwischenspeicher und der Lauf brach beim Sortieren an einem fehlenden topics-Feld ab.
+test('Stände aus einer früheren Fassung lassen den Lauf nicht abbrechen',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-alt-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ try{
+ const {asItem,deduplicate,seedFromSnapshot}=await import('../src/server/monitor');
+ // So sah ein Eintrag vor der Themensuche aus: ohne topics, ohne updatedAt.
+ const alt:any={id:'alt1',sourceId:'dip-committees',institution:'Bundestag',externalId:'1',
+  title:'Altes Papier',url:'https://www.bundestag.de/a',text:'',publishedAt:new Date().toISOString(),
+  documentType:'Gesetzentwurf',step:null,procedure:null,documentNumber:'21/1',pdfUrl:null,
+  lead:null,originator:null,hash:'h',version:1,change:'unchanged',
+  firstSeen:new Date().toISOString(),lastSeen:new Date().toISOString(),changedAt:new Date().toISOString()};
+ const normal=asItem(alt);
+ assert.deepEqual(normal.topics,[]);
+ assert.deepEqual(normal.committees,[]);
+ assert.deepEqual(normal.ministries,[]);
+ assert.equal(normal.updatedAt,null);
+ assert.equal(normal.archived,false);
+ // Und der ganze Weg haelt: Wiederaufbau, Zusammenfuehrung, Lauf.
+ await seedFromSnapshot({items:[alt,{...alt,id:'alt2',sourceId:'dip-drucksachen',externalId:'2'}]});
+ assert.doesNotThrow;
+ assert.equal(await deduplicate(),1,'auch Altbestand wird zusammengeführt');
+ const lauf=await runMonitor({sources:[{id:'dip-committees',name:'T',institution:'Bundestag',
+  url:'https://www.bundestag.de/',kind:'committee-dip',note:'Fixture'}],fetcher:async()=>[]});
+ assert.ok(lauf,'der Lauf muss durchlaufen');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
