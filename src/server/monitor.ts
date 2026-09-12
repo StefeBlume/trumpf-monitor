@@ -1,9 +1,9 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
-import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash} from './parsing';
+import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash} from './parsing';import {lobbyEntries,type LobbyEntry} from './lobby';
 export function berlinClock(date=new Date()){const parts=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(date);const get=(t:string)=>parts.find(p=>p.type===t)!.value;return {day:`${get('year')}-${get('month')}-${get('day')}`,hour:Number(get('hour'))};}
-export async function dashboard():Promise<Dashboard>{const c=await db();const [items,states,briefings,events]=await Promise.all([c.execute('SELECT data FROM items'),c.execute('SELECT id,data FROM source_state'),c.execute('SELECT data FROM briefings ORDER BY rowid DESC LIMIT 60'),c.execute('SELECT data FROM events ORDER BY rowid DESC LIMIT 300')]);const state=new Map(states.rows.map(s=>[s.id,JSON.parse(String(s.data))]));return {items:items.rows.map(r=>JSON.parse(String(r.data))),sources:configuredSources().map(s=>({...s,...state.get(s.id),status:state.get(s.id)?.status??(s.kind==='manual'?'manual':s.env&&!process.env[s.env]&&s.kind!=='rss'?'setup':'pending')})),briefings:briefings.rows.map(r=>JSON.parse(String(r.data))).sort((a:Briefing,b:Briefing)=>b.createdAt.localeCompare(a.createdAt)),events:events.rows.map(r=>JSON.parse(String(r.data))).sort((a:Event,b:Event)=>b.at.localeCompare(a.at)),serverTime:new Date().toISOString(),scheduleEnabled:process.env.SCHEDULE_ENABLED==='true'};}
+export async function dashboard():Promise<Dashboard>{const c=await db();const [items,states,briefings,events,lobby]=await Promise.all([c.execute('SELECT data FROM items'),c.execute('SELECT id,data FROM source_state'),c.execute('SELECT data FROM briefings ORDER BY rowid DESC LIMIT 60'),c.execute('SELECT data FROM events ORDER BY rowid DESC LIMIT 300'),c.execute('SELECT data FROM lobby')]);const state=new Map(states.rows.map(s=>[s.id,JSON.parse(String(s.data))]));return {items:items.rows.map(r=>JSON.parse(String(r.data))),sources:configuredSources().map(s=>({...s,...state.get(s.id),status:state.get(s.id)?.status??(s.kind==='manual'?'manual':s.env&&!process.env[s.env]&&s.kind!=='rss'?'setup':'pending')})),briefings:briefings.rows.map(r=>JSON.parse(String(r.data))).sort((a:Briefing,b:Briefing)=>b.createdAt.localeCompare(a.createdAt)),events:events.rows.map(r=>JSON.parse(String(r.data))).sort((a:Event,b:Event)=>b.at.localeCompare(a.at)),lobby:lobby.rows.map(r=>JSON.parse(String(r.data))),serverTime:new Date().toISOString(),scheduleEnabled:process.env.SCHEDULE_ENABLED==='true'};}
 export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed:number,manual:number):string{
  if(!ok)return 'Keine belastbare Aussage: Es konnte keine Quelle erfolgreich geprüft werden.';
  const changes=updated.filter(i=>i.change!=='baseline');
@@ -14,7 +14,7 @@ export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed
  const named=[...committees].map(id=>committeeById(id)?.short).filter(Boolean).slice(0,4).join(', ');
  return `${head}${changes.length} neue oder geänderte Dokumente${committees.size?` in ${committees.size} ausgewählten Ausschüssen (${named}${committees.size>4?' u. a.':''})`:''}. ${coverage}`;
 }
-export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,since:string,warn?:(n:string)=>void)=>Promise<DocumentInput[]>; retentionDays?:number}={}):Promise<Briefing|null>{
+export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,since:string,warn?:(n:string)=>void)=>Promise<DocumentInput[]>; retentionDays?:number; lobby?:boolean; lobbyFetcher?:()=>Promise<LobbyEntry[]>}={}):Promise<Briefing|null>{
  const c=await db(),id=randomUUID(),clock=berlinClock();
  const lock=await c.execute({sql:'INSERT INTO locks(id,owner,expires) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,expires=excluded.expires WHERE locks.expires < ?',args:['monitor',id,Date.now()+600000,Date.now()]});
  if(!lock.rowsAffected)throw new Error('Ein Quellenlauf ist bereits aktiv.');
@@ -22,6 +22,17 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const all=options.sources??configuredSources();const initial=await dashboard();const existing=new Map(initial.items.map(i=>[i.id,i]));const states=new Map(initial.sources.map(s=>[s.id,s]));
  const updated:Item[]=[];let ok=0,failed=0,manual=0;const errors:string[]=[];
  for(const source of all){
+ // Das Lobbyregister liefert Akteure statt Dokumente und laeuft deshalb an der Dokumentpruefung vorbei.
+ if(source.kind==='lobby'){
+ const now=new Date().toISOString();
+ try{
+ const n=options.lobby===false?0:await refreshLobby(options.lobbyFetcher);
+ await c.execute({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:'ok',checkedAt:now,count:n,error:null})]});
+ ok++;
+ }catch(e){failed++;const error=e instanceof Error?e.message:'Abruf fehlgeschlagen';errors.push(`${source.institution}: ${error}`);
+ await c.execute({sql:'INSERT INTO source_state(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[source.id,JSON.stringify({status:'error',checkedAt:states.get(source.id)?.checkedAt??null,count:states.get(source.id)?.count??0,error})]});}
+ continue;
+ }
  if(source.kind==='manual'||(source.env&&!process.env[source.env]&&source.kind!=='rss'&&!options.fetcher)){manual++;continue;}
  const now=new Date().toISOString();
  try{
@@ -96,4 +107,15 @@ export async function prune(days:number):Promise<number>{
  {sql:`DELETE FROM items WHERE id IN (${list})`,args:ids}
  ],'write');
  return ids.length;
+}
+
+// Das Lobbyregister beschreibt Akteure, nicht Dokumente. Es laeuft deshalb neben der Dokumentpruefung
+// und wird bei jedem erfolgreichen Lauf vollstaendig ersetzt; der Registerstand ist die Wahrheit.
+export async function refreshLobby(fetcher:()=>Promise<LobbyEntry[]>=lobbyEntries):Promise<number>{
+ const entries=await fetcher();
+ if(!entries.length)throw new Error('Lobbyregister lieferte keine Einträge');
+ const c=await db();
+ await c.batch([{sql:'DELETE FROM lobby',args:[]},
+ ...entries.map(e=>({sql:'INSERT INTO lobby(register_number,data) VALUES(?,?)',args:[e.registerNumber,JSON.stringify(e)]}))],'write');
+ return entries.length;
 }

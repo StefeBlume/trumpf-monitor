@@ -42,6 +42,7 @@ Auswahl und Regel ändern: `COMMITTEES` und `MINISTRIES` in `src/model.ts`. Die 
 | DIP `drucksache-text` | API | Volltext aller Drucksachen gegen das Themenraster; zusätzlich alles aus den ausgewählten Ressorts |
 | Anhörungen und öffentliche Sitzungen | Terminlisten der Ausschüsse | je ausgewähltem Bundestagsausschuss eine eigene amtliche Liste |
 | Tagesordnungen | ausschussübergreifende Liste | Ausschussspalte gegen die Bundestagsauswahl |
+| Lobbyregister | JSON-API | je Thema eine Abfrage; aufgeführt wird, wer mindestens zwei Themen berührt |
 | BAFA-Newsfeed | RSS | ungefiltert, ohne Gremienbezug |
 
 Die Termin- und Tagesordnungslisten sind HTML-Listen der Ausschussseiten, keine dokumentierte Schnittstelle. Bricht das CMS die Struktur, meldet die Terminquelle einen Fehler, statt still nichts zu liefern. Der frühere RSS-Feed war auf 15 Einträge über alle Ausschüsse gedeckelt und lieferte deshalb nur einen Bruchteil der Termine.
@@ -97,6 +98,18 @@ Ein Erstimport ist kein Fund. Die Zusammenfassung sagt das ausdrücklich.
 - **EUR-Lex und Have Your Say sind nicht angebunden.** Beides liegt außerhalb der Ausschuss- und Ressortauswahl; EU-Vorlagen erscheinen nur, soweit sie an einen ausgewählten Ausschuss überwiesen wurden.
 - **Keine Meldung ist kein Entwarnungsnachweis.** Die Anzeige gilt nur für die ausgewählten Gremien und die erfolgreich abgerufenen Quellen. Fehlgeschlagene Abrufe werden pro Quelle mit Fehlertext ausgewiesen.
 
+## Interessenvertretung
+
+Das amtliche [Lobbyregister des Bundestags](https://www.lobbyregister.bundestag.de/) hat eine JSON-Schnittstelle. Die App stellt je Thema eine eigene Abfrage (`LOBBY_QUERIES` in `src/server/lobby.ts`) und führt die Treffer zusammen.
+
+**Was angezeigt wird.** Aufgeführt wird, wer mindestens zwei der Themen berührt — bei einem einzigen Thema sind es über 1.600 Einträge, bei zweien rund 95. Der eigene Eintrag von TRUMPF (R000697) bleibt immer dabei. Sortiert wird nach Themenbreite, dann nach Zahl der Vorhaben; beides sind Angaben aus dem Register.
+
+Je Akteur zeigt die App: Art (Unternehmen, Verband, Wissenschaft), berührte Themen, Zahl der bearbeiteten Gesetzesvorhaben, Stellungnahmen, Vollzeitstellen für Interessenvertretung, jährlicher Aufwand als Spanne, Interessenfelder und den Stand des Eintrags.
+
+**Grenze.** Das Register zeigt, wer sich *registriert* hat und was er *selbst angibt* — nicht, wer tatsächlich Einfluss nimmt. Es ist eine Selbstauskunft mit gesetzlicher Pflicht, keine Wirkungsmessung.
+
+**Getrennt vom Dokumentpfad.** Akteure sind keine Dokumente: sie laufen an der Änderungserkennung vorbei und werden bei jedem erfolgreichen Lauf vollständig ersetzt, weil der Registerstand die Wahrheit ist. Eine leere Antwort löscht den Bestand nicht. Fällt das Register aus, bleiben die Dokumentquellen unberührt.
+
 ## Betrieb auf GitHub Pages
 
 Für die Nutzung auf dem Handy ohne laufenden Mac baut `.github/workflows/monitor.yml` die App als statische Seite:
@@ -125,9 +138,11 @@ NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
 npm test
 ```
 
-46 Tests in drei Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+54 Tests in vier Dateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
 
 `tests/topics.test.ts` deckt die Themensuche ab: Stimmigkeit des Rasters, Erkennung aller TRUMPF-Kernthemen, Abkürzungen nur in Großschreibung, industrieller Kontext für KI und die breiten Standortbegriffe, deutsche Beugung samt Zeilenumbruch, Zählung und Titelvermerk, Reihenfolge und die Belegqualität.
+
+`tests/lobby.test.ts` deckt das Register ab: eine Abfrage je Thema, vollständige Übernahme eines echten Eintrags, unvollständige Antworten, Zusammenführung über mehrere Abfragen, die Zwei-Themen-Schwelle samt Ausnahme für den eigenen Eintrag, die Reihenfolge, das Ersetzen statt Anhäufen und der Fall, dass ein Registerausfall die Dokumentquellen nicht mitreißt.
 
 `tests/hardening.test.ts` deckt die Randfälle ab, die im Audit aufgefallen sind: fremde Adressen aus fremdem Markup, unsichtbare Trennzeichen, Formatbrüche gegen legitime Leerergebnisse, keine Wiederholung dauerhafter Fehler, Datumsüberlauf (der 31. Februar wurde zum 3. März), Namensabgleich über alle 24 echten Ausschussbezeichnungen, Aufbewahrung, sichtbare Teilausfälle und unvollständige API-Antworten.
 

@@ -13,6 +13,7 @@ export async function db():Promise<Client>{
  'CREATE TABLE IF NOT EXISTS source_state (id TEXT PRIMARY KEY, data TEXT NOT NULL)',
  'CREATE TABLE IF NOT EXISTS locks (id TEXT PRIMARY KEY, owner TEXT NOT NULL, expires INTEGER NOT NULL)',
  'CREATE TABLE IF NOT EXISTS cron_days (day TEXT PRIMARY KEY, completed_at TEXT NOT NULL)',
+ 'CREATE TABLE IF NOT EXISTS lobby (register_number TEXT PRIMARY KEY, data TEXT NOT NULL)',
  'CREATE INDEX IF NOT EXISTS items_source ON items(source_id)'
  ],'write');
  client=c;return c;

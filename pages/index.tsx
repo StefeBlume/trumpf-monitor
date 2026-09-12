@@ -1,6 +1,6 @@
 import Head from 'next/head';
 import {useEffect,useRef,useState} from 'react';
-import {Radar,LayoutDashboard,FileText,Radio,Settings,Search,ArrowUpRight,RefreshCw,ChevronRight,Clock,ShieldCheck,AlertCircle,ArrowLeft,Download,Archive,History,Check,SlidersHorizontal,X,Landmark,FileDown,Building2,Target,Quote,CalendarDays} from 'lucide-react';
+import {Radar,LayoutDashboard,FileText,Radio,Settings,Search,ArrowUpRight,RefreshCw,ChevronRight,Clock,ShieldCheck,AlertCircle,ArrowLeft,Download,Archive,History,Check,SlidersHorizontal,X,Landmark,FileDown,Building2,Target,Quote,CalendarDays,Users,Euro} from 'lucide-react';
 import {COMMITTEES,MINISTRIES,SOURCES,committeeById,type Dashboard,type Item,type Briefing,type Change} from '../src/model';
 import {TOPICS,topicById,topicRank,type TopicMatch} from '../src/server/topics';
 const HOSTED=process.env.NEXT_PUBLIC_HOSTED==='1';
@@ -10,7 +10,7 @@ const STATIC=process.env.NEXT_PUBLIC_STATIC==='1';
 const REPO=process.env.NEXT_PUBLIC_REPO??'';
 const labels:Record<string,string>={baseline:'Ausgangsstand',new:'Neu',changed:'Geändert',unchanged:'Unverändert'};
 const ministryById=(id:string)=>MINISTRIES.find(m=>m.id===id);
-const empty:Dashboard={items:[],sources:SOURCES,briefings:[],events:[],serverTime:'',scheduleEnabled:false};
+const empty:Dashboard={items:[],sources:SOURCES,briefings:[],events:[],lobby:[],serverTime:'',scheduleEnabled:false};
 const date=(s:string|null|undefined,full=false)=>s?new Intl.DateTimeFormat('de-DE',full?{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}:{day:'2-digit',month:'short',year:'numeric'}).format(new Date(s)):'Kein Datum in der Quelle';
 // Nach welchem Datum die Liste ordnet: der Zeitpunkt der letzten Bewegung laut Quelle. Das eigene
 // changedAt taugt dafuer nicht - beim Lauf bekommen alle Treffer denselben Zeitstempel, die
@@ -22,7 +22,7 @@ const isUpcoming=(i:Item)=>!!i.publishedAt&&i.publishedAt.slice(0,10)>=today()&&
 // Altbestand aus einem Stand vor der Themensuche traegt das Feld noch nicht.
 const topicsOf=(i:Item):TopicMatch[]=>i.topics??[];
 const bodies=(i:Item)=>[...i.committees.map(c=>committeeById(c)?.short),...i.ministries.map(m=>ministryById(m)?.short)].filter(Boolean) as string[];
-const nav=[['overview','Lagebild',LayoutDashboard],['committees','Ausschüsse',Landmark],['briefings','Briefings',FileText],['sources','Quellen',Radio],['settings','Einstellungen',Settings]] as const;
+const nav=[['overview','Lagebild',LayoutDashboard],['lobby','Akteure',Users],['committees','Ausschüsse',Landmark],['briefings','Briefings',FileText],['sources','Quellen',Radio],['settings','Einstellungen',Settings]] as const;
 type Connection={url:string;token:string};
 async function request<T>(conn:Connection,path:string,method='GET',body?:unknown):Promise<T>{
  if(!HOSTED&&!conn.token)throw new Error('Bitte unter Einstellungen den Verbindungsschlüssel hinterlegen.');
@@ -53,6 +53,15 @@ export default function Home(){
  // Bei stuendlichen Laeufen wird nicht jedes Mal ein Briefing gespeichert. Der ehrliche Zeitpunkt
  // des letzten Abrufs steht deshalb im Quellenstatus, nicht im Briefing.
  const lastCheck=data.sources.map(s=>s.checkedAt).filter(Boolean).sort().at(-1);
+ const lobby=(data.lobby??[]).filter(e=>!topic||e.topics.includes(topic));
+ // Das Register meldet Spannen in Zehntausenderschritten. Ohne Nachkommastellen fallen Unter- und
+ // Obergrenze in der kompakten Schreibweise zusammen ("6 Mio.–6 Mio.").
+ const geld=(e:{spendFrom:number|null;spendTo:number|null})=>{
+  if(e.spendFrom===null)return null;
+  const f=(n:number)=>new Intl.NumberFormat('de-DE',{notation:'compact',maximumFractionDigits:n>=1e6?2:0}).format(n);
+  const von=f(e.spendFrom),bis=f(e.spendTo??e.spendFrom);
+  return (von===bis?von:`${von}–${bis}`)+' €';
+ };
  const briefing=data.briefings.find(b=>b.id===pickedBriefing)??latest;
  const types=[...new Set(data.items.map(i=>i.documentType))].sort();
  const inTopic=(i:Item)=>!topic||topicsOf(i).some(m=>m.topic===topic);
@@ -107,6 +116,23 @@ export default function Home(){
  {filters&&<div className="filters"><label>Ausschuss oder Ressort<select value={body} onChange={e=>setBody(e.target.value)}><option value="">Alle ausgewählten Gremien</option><optgroup label="Ausschüsse">{COMMITTEES.map(c=><option key={c.id} value={c.id}>{c.short}</option>)}</optgroup><optgroup label="Ressorts">{MINISTRIES.map(m=><option key={m.id} value={m.id}>{m.short}</option>)}</optgroup></select></label><label>Dokumenttyp<select value={docType} onChange={e=>setDocType(e.target.value)}><option value="">Alle Dokumenttypen</option>{types.map(t=><option key={t} value={t}>{t}</option>)}</select></label><label>Quelle<select value={source} onChange={e=>setSource(e.target.value)}><option value="">Alle Quellen</option>{data.sources.map(s=><option key={s.id} value={s.id}>{s.institution} · {s.name}</option>)}</select></label><label>Status<select value={status} onChange={e=>setStatus(e.target.value as Change|'')}><option value="">Alle Status</option>{(['baseline','new','changed','unchanged'] as Change[]).map(s=><option key={s} value={s}>{labels[s]}</option>)}</select></label><label>Thema<select value={topic} onChange={e=>setTopic(e.target.value)}><option value="">Alle Themen</option>{TOPICS.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></label><label>Veröffentlicht ab<input type="date" value={after} onChange={e=>setAfter(e.target.value)}/></label><button className="text-button" onClick={()=>{setSource('');setBody('');setStatus('');setDocType('');setAfter('');setQuery('');setTopic('');}}>Zurücksetzen</button></div>}
  {body&&<button className="active-filter" onClick={()=>setBody('')}>{committeeById(body)?.short??ministryById(body)?.short} <X size={14}/></button>}
  <div className="item-list">{matches.map(item=><ItemCard key={item.id} item={item} onClick={()=>setSelected(item)}/>)}{!matches.length&&<div className="empty"><Radar size={40}/><h3>{data.items.length?'Keine passenden Dokumente':'Noch kein Quellenstand'}</h3><p>{data.items.length?'Passe die Suche oder Filter an.':'Starte den ersten Quellenlauf, um die amtlichen Veröffentlichungen zu laden.'}</p>{!STATIC&&!HOSTED&&!conn.token&&<button className="button secondary" onClick={()=>navigate('settings')}>Verbindung einrichten</button>}</div>}</div></section><div className="footnote"><ShieldCheck size={16}/><span>Keine Meldung ist kein Entwarnungsnachweis. Die Anzeige gilt ausschließlich für die ausgewählten Gremien und die erfolgreich erfassten Quellen.</span></div></>:
+ view==='lobby'?<><div className="page-heading"><div><div className="eyebrow">AMTLICHES LOBBYREGISTER</div><h1>Wer sich einsetzt.</h1><p>Registrierte Interessenvertretung zu deinen Themen. Selbstauskunft aus dem Register, ohne Bewertung.</p></div></div>
+ <div className="notice"><ShieldCheck size={20}/><span>Das Register zeigt, wer sich <strong>registriert</strong> hat und was er selbst angibt — nicht, wer tatsächlich Einfluss nimmt. Aufgeführt wird, wer mindestens zwei deiner Themen berührt.</span></div>
+ <div className="topicbar">{TOPICS.map(t=>{const n=(data.lobby??[]).filter(e=>e.topics.includes(t.id)).length;return <button key={t.id} className={'topicchip'+(topic===t.id?' chosen':'')+(n?'':' leer')} aria-pressed={topic===t.id} disabled={!n} onClick={()=>setTopic(topic===t.id?'':t.id)} title={t.why}>{t.label}<span>{n}</span></button>;})}{topic&&<button className="topicchip reset" onClick={()=>setTopic('')}>Alle Themen <X size={13}/></button>}</div>
+ <section className="results"><div className="section-heading"><h2><Users size={19}/> Akteure <span>{lobby.length}</span></h2><span className="muted">Sortiert nach Themenbreite und Zahl der Vorhaben</span></div>
+ {lobby.length?<div className="item-list">{lobby.map(e=><a key={e.registerNumber} className={'lobby-card'+(e.own?' eigen':'')} href={e.url} target="_blank" rel="noopener noreferrer">
+  <div className="lobby-kopf"><div><strong>{e.name}</strong><span className="lobby-typ">{e.kind}{e.own&&' · eigener Eintrag'}</span></div><ArrowUpRight size={17}/></div>
+  <div className="tags">{e.topics.map(id=><span key={id} className="badge topic">{topicById(id)?.label}</span>)}</div>
+  <div className="lobby-zahlen">
+   <span><FileText size={14}/>{e.projects} {e.projects===1?'Vorhaben':'Vorhaben'}</span>
+   {e.statements>0&&<span><Quote size={14}/>{e.statements} Stellungnahme{e.statements===1?'':'n'}</span>}
+   {e.staffFte!==null&&<span><Users size={14}/>{e.staffFte.toLocaleString('de-DE')} Vollzeitstellen</span>}
+   {geld(e)&&<span><Euro size={14}/>{geld(e)}{e.fiscalYear?` (${e.fiscalYear})`:''}</span>}
+   {e.updatedAt&&<span><Clock size={14}/>Stand {date(e.updatedAt)}</span>}
+  </div>
+  {!!e.fields.length&&<p className="lobby-felder">{e.fields.join(' · ')}</p>}
+ </a>)}</div>:
+ <div className="empty"><Users size={36}/><h3>Keine Einträge</h3><p>{data.lobby?.length?'Zu diesem Thema ist niemand mit mindestens zwei deiner Themen registriert.':'Noch kein Quellenlauf, oder das Register war nicht erreichbar.'}</p></div>}</section></>:
  view==='committees'?<><div className="page-heading"><div><div className="eyebrow">DIE AUSWAHL</div><h1>Ausschüsse & Ressorts.</h1><p>Nur diese Gremien werden überwacht. Alles andere wird verworfen, bevor es in die App kommt.</p></div></div>
  <div className="notice"><ShieldCheck size={20}/><span>Die Auswahl ist die einzige inhaltliche Entscheidung des Systems. Einzelne Dokumente werden danach nicht mehr gewichtet.</span></div>
  {(['Bundestag','Bundesrat'] as const).map(inst=><section className="body-section" key={inst}><h2>{inst}</h2><div className="body-grid">{COMMITTEES.filter(c=>c.institution===inst).map(c=>{const items=activeIn(c.id);return <button className="body-card" key={c.id} onClick={()=>focusBody(c.id)}><div className="body-top"><Landmark size={19}/><strong>{items.length}</strong></div><h3>{c.name}</h3><p>{c.scope}</p><span className="body-foot">{items.filter(i=>i.change==='new'||i.change==='changed').length} neu oder geändert <ChevronRight size={15}/></span></button>;})}</div></section>)}
