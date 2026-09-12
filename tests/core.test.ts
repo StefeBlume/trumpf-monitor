@@ -355,3 +355,24 @@ test('Zusammengeführte Dubletten tauchen nicht bei jedem Lauf erneut als neu au
  assert.deepEqual(items[0].committees,['we']);
  assert.deepEqual(items[0].ministries,['bmwe'],'die Angaben der zweiten Quelle sind eingearbeitet');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Briefings tragen ganze Dokumente mit. Live waren das 557 KB von 960 - mehr als die Haelfte des
+// veroeffentlichten Standes fuer einen Verlauf, den die App nur als Liste zeigt.
+test('Briefings werden schlank ausgeliefert, ohne die Aussage zu verlieren',async()=>{
+ const {schlankesBriefing}=await import('../src/server/monitor');
+ const item=(n:number)=>({...doc,id:'i'+n,sourceId:'x',institution:'X',hash:'h',version:1,
+  change:'new' as const,firstSeen:'2026-09-01T00:00:00.000Z',lastSeen:'2026-09-01T00:00:00.000Z',
+  changedAt:'2026-09-01T00:00:00.000Z',archived:false,
+  topics:[{topic:'halbleiter',terms:['halbleiter'],count:9,inTitle:true,snippet:'…langer Beleg…'}]});
+ const voll={id:'b',createdAt:'2026-09-01T10:00:00.000Z',day:'2026-09-01',baseline:false,
+  summary:'30 neue oder geänderte Dokumente',items:Array.from({length:30},(_,n)=>item(n)),
+  coverage:{ok:7,failed:0,manual:0},errors:[]};
+ const schlank=schlankesBriefing(voll);
+ assert.equal(schlank.items.length,12,'hoechstens zwölf Einträge');
+ assert.deepEqual(schlank.items[0].topics,[],'die Fundstellen bleiben draußen');
+ assert.equal(schlank.summary,voll.summary,'die Aussage bleibt vollständig');
+ assert.deepEqual(schlank.coverage,voll.coverage);
+ assert.ok(JSON.stringify(schlank).length<JSON.stringify(voll).length/2,'deutlich kleiner');
+ // Ein Briefing ohne Einträge bleibt unverändert nutzbar.
+ assert.deepEqual(schlankesBriefing({...voll,items:[]}).items,[]);
+});
