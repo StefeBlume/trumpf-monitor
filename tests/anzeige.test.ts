@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {recency,datumsteil,suchtext,bewegungswort} from '../src/ui/format';
+import {recency,datumsteil,suchtext,bewegungswort,datum,nurTag} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
  url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
@@ -237,4 +237,20 @@ test('Der Stand wird über den Basispfad geladen, nicht relativ zur Adresse',()=
  const config=readFileSync('next.config.mjs','utf8');
  assert.match(config,/basePath:base/,'Build und Abruf nutzen denselben Basispfad');
  assert.match(config,/process\.env\.NEXT_PUBLIC_BASE_PATH/,'aus derselben Variable');
+});
+
+// "Letzte Bewegung laut Quelle: 23.09.2026, 02:00" stand bei einer Anhörung, die erst am 23. stattfindet:
+// eine erfundene Uhrzeit aus Mitternacht UTC, und als "Bewegung" nur der Termin selbst.
+test('Reine Tagesangaben erscheinen ohne erfundene Uhrzeit und ohne Tagesverschiebung',()=>{
+ assert.equal(nurTag('2026-09-23T00:00:00.000Z'),true);
+ assert.equal(nurTag('2026-09-07T06:43:12.000Z'),false);
+ assert.equal(datum('2026-09-23T00:00:00.000Z',true),'23.09.2026','keine Uhrzeit, die keine Quelle nennt');
+ assert.equal(datum('2026-09-07T06:43:12.000Z',true),'07.09.2026, 08:43','echte Zeitpunkte in Berliner Zeit');
+ assert.equal(datum('2026-09-23T00:00:00.000Z'),'23. Sept. 2026');
+ assert.equal(datum('2026-09-22T23:30:00.000Z'),'23. Sept. 2026','ein Zeitpunkt kurz vor Mitternacht UTC ist in Berlin schon der nächste Tag');
+ assert.equal(datum(null),'Kein Datum in der Quelle');
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes("istTermin(selected)&&selected.updatedAt===selected.publishedAt"),'ein Termin ohne eigenes Änderungsdatum behauptet keine Bewegung');
+ assert.ok(seite.includes("timeZone:nurTag(i.publishedAt!)?'UTC':'Europe/Berlin'"),'"Als Nächstes" verschiebt keinen Tag');
+ assert.ok(!/new Intl\.DateTimeFormat\('de-DE',full\?/.test(seite),'kein zweiter Formatierer neben datum()');
 });

@@ -32,3 +32,18 @@ export function suchtext(i:Item,gremien:string[]):string{
 // Anhoerung, die heute um zehn Uhr beginnt, ist bis zum Abend noch der naechste Termin.
 export const bewegungswort=(stamp:string|null|undefined,heute:string):'zuletzt'|'nächster Termin'=>
  (stamp??'').slice(0,10)>heute?'nächster Termin':'zuletzt';
+
+// Viele Quellen fuehren nur einen Tag: Terminlisten, Tagesordnungen, die Dateinamen des BAFA. Gespeichert
+// als Mitternacht UTC, zeigte die Dokumentansicht "23.09.2026, 02:00" - eine Uhrzeit, die keine Quelle
+// genannt hat, und westlich von Greenwich den Vortag. Reine Tage werden deshalb ohne Uhrzeit und in UTC
+// gelesen; echte Zeitpunkte, etwa die Aenderungszeit im DIP, in Berliner Zeit.
+export const nurTag=(s:string)=>/T00:00:00(?:\.000)?Z$/.test(s);
+export function datum(s:string|null|undefined,mitZeit=false):string{
+ if(!s)return 'Kein Datum in der Quelle';
+ const tag=nurTag(s);
+ const f:Intl.DateTimeFormatOptions=mitZeit&&!tag
+  ?{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}
+  :mitZeit?{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}
+  :{day:'2-digit',month:'short',year:'numeric',timeZone:tag?'UTC':'Europe/Berlin'};
+ return new Intl.DateTimeFormat('de-DE',f).format(new Date(s));
+}
