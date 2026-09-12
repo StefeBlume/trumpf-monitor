@@ -254,3 +254,17 @@ test('Reine Tagesangaben erscheinen ohne erfundene Uhrzeit und ohne Tagesverschi
  assert.ok(seite.includes("timeZone:nurTag(i.publishedAt!)?'UTC':'Europe/Berlin'"),'"Als Nächstes" verschiebt keinen Tag');
  assert.ok(!/new Intl\.DateTimeFormat\('de-DE',full\?/.test(seite),'kein zweiter Formatierer neben datum()');
 });
+
+// Drei Aussagen des Lagebilds und der Quellenansicht stimmten nicht mit der App überein.
+test('Fußnote, Quellenhinweis und Datumsfilter sagen, was die App tut',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ // Die Themensuche nimmt Drucksachen ohne Gremium auf; "ausschließlich für die ausgewählten Gremien" stimmte nicht.
+ assert.ok(!seite.includes('ausschließlich für die ausgewählten Gremien'),'die Fußnote nennt nicht nur Gremien');
+ assert.ok(seite.includes('die Themensuche in den Drucksachen'),'sie nennt beide Wege in die App');
+ // Keine Quelle ist "offen"; der Hinweis erklärte einen Zustand, den es nicht gab.
+ assert.ok(seite.includes("{data.sources.some(s=>s.status==='manual')&&<div className=\"notice\">"),'der Offen-Hinweis erscheint nur, wenn es offene Quellen gibt');
+ // Die Liste führt die letzte Bewegung; der Filter prüfte das Dokumentdatum und blendete aktuelle Bewegungen alter Papiere aus.
+ assert.ok(seite.includes('(!after||recency(i).slice(0,10)>=after)'),'gefiltert wird nach demselben Datum, nach dem sortiert wird');
+ assert.ok(seite.includes('<label>Letzte Bewegung ab<input type="date"'),'und die Beschriftung sagt es');
+ assert.ok(!seite.includes('Veröffentlicht ab'));
+});
