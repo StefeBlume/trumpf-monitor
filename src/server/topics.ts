@@ -6,7 +6,7 @@
 //
 // Ein Treffer ist eine Fundstelle, keine Bewertung: die App zeigt den gefundenen Begriff und
 // seinen Satzzusammenhang und überlässt die Einschätzung der Leserin.
-export interface Topic {id:string; label:string; why:string; terms:string[]; strict?:string[]; context?:{terms:string[]; with:string[]}; ignore?:RegExp[];}
+export interface Topic {id:string; label:string; why:string; terms:string[]; strict?:string[]; context?:{terms:string[]; with:string[]; naehe?:'satz'}; ignore?:RegExp[];}
 // context: Begriffe, die fuer sich genommen zu breit sind. Sie zaehlen nur, wenn im selben Dokument
 // auch ein Begriff aus "with" vorkommt. "Kuenstliche Intelligenz" trifft sonst KI-generierte Musik,
 // "Buerokratieabbau" das Vereinssteuerrecht. Beide Fundstellen werden als Beleg angezeigt.
@@ -40,7 +40,8 @@ export const TOPICS:Topic[] = [
  {id:'ki',label:'Industrielle KI',why:'KI in Fertigung und Maschinensteuerung: KI-Verordnung, Hochrisiko-Einstufung von Maschinen, Fertigungssoftware.',
   terms:['ki-verordnung','ki-gesetz','hochrisiko-ki','ai act','industrielle ki','ki in der produktion','ki-gestützte fertigung','predictive maintenance'],
   context:{terms:['künstliche intelligenz','maschinelles lernen','artificial intelligence','ki-system','ki-modell','ki-anwendung','algorithmische entscheidung'],
-   with:['produktion','fertigung','industrie','maschine','werkzeugmaschine','automatisierung','anlagenbau','qualitätssicherung','smart factory','industrie 4.0','produktionsprozess','betriebliche']}},
+   with:['produktion','fertigung','industrie','maschine','werkzeugmaschine','anlagenbau','qualitätssicherung','smart factory','industrie 4.0','produktionsprozess'],
+   naehe:'satz'}},
  {id:'hightech',label:'Hochtechnologie & Förderung',why:'Forschungsförderung und Schlüsseltechnologien betreffen TRUMPFs Entwicklungsbudget.',
   terms:['hochtechnologie','spitzentechnologie','schlüsseltechnologie','forschungsförderung','forschungszulage','technologieförderung','hightech agenda','deep tech','technologiesouveränität','technologische souveränität','transferförderung','photonik-forschung']},
  {id:'standort',label:'Wirtschaftsstandort Deutschland',why:'Energiepreise, Bürokratie und Fachkräfte bestimmen die Kosten am Standort Ditzingen.',
@@ -76,6 +77,21 @@ const COMPILED:Compiled[]=TOPICS.flatMap(t=>[
  ...(t.context?.terms??[]).map(term=>({topic:t.id,term,re:loose(term),needsContext:true}))
 ]);
 const CONTEXT=new Map(TOPICS.filter(t=>t.context).map(t=>[t.id,t.context!.with.map(loose)]));
+// "Kuenstliche Intelligenz" steht in Gerichts-, Migrations- und Verwaltungstexten ebenso wie in der Fertigung.
+// Ein Industriewort irgendwo im Dokument genuegte, und lange Texte fuehren immer eines: 9 von 15 Treffern
+// fuer "Industrielle KI" betrafen KI-Schriftsaetze, Cyberangriffe oder Gastbeitraege einer Ministerin.
+// Bei diesen Themen muss das Industriewort im selben Satz stehen. Beim Standort bleibt es beim Dokument:
+// "Energiepreise" und "Fachkraeftemangel" sind von sich aus wirtschaftlich, dort verloere die Satzregel
+// die regionale Wirtschaftsfoerderung und das Haushaltsbegleitgesetz.
+const NAEHE=new Set(TOPICS.filter(t=>t.context?.naehe==='satz').map(t=>t.id));
+function kontextImSatz(text:string,at:number,len:number,topic:string):boolean{
+ const vor=Math.max(text.lastIndexOf('. ',at),text.lastIndexOf('? ',at),text.lastIndexOf('! ',at),text.lastIndexOf('\n\n',at),at-300);
+ const enden=[text.indexOf('. ',at+len),text.indexOf('? ',at+len),text.indexOf('! ',at+len),text.indexOf('\n\n',at+len)].filter(x=>x>=0);
+ const nach=Math.min(enden.length?Math.min(...enden)+1:text.length,at+len+300);
+ // Der Fundbegriff selbst zaehlt nicht als Kontext: "maschinelles Lernen" enthaelt "maschine".
+ const satz=text.slice(vor+1,at)+' '+text.slice(at+len,nach);
+ return CONTEXT.get(topic)!.some(re=>{re.lastIndex=0;return re.test(satz);});
+}
 export const topicById=(id:string)=>TOPICS.find(t=>t.id===id);
 function snippetAt(text:string,at:number,len:number):string{
  const from=Math.max(0,at-75), to=Math.min(text.length,at+len+75);
@@ -103,13 +119,15 @@ export function scanTopics(title:string,body=''):TopicMatch[]{
   return texte.get(topic)!;
  };
  for(const c of COMPILED){
-  if(c.needsContext&&!hatKontext(c.topic))continue;
+  const imSatz=!!c.needsContext&&NAEHE.has(c.topic);
+  if(c.needsContext&&!imSatz&&!hatKontext(c.topic))continue;
   c.re.lastIndex=0;
   let m:RegExpExecArray|null, first=-1, firstLen=0, imText=-1, imTextLen=0, n=0;
   const text=textFuer(c.topic);
   while((m=c.re.exec(text))){
-   n++;
    const at=m.index+m[1].length, len=m[0].length-m[1].length-(m[2]?m[2].length:0);
+   if(imSatz&&!kontextImSatz(text,at,len,c.topic)){if(m.index===c.re.lastIndex)c.re.lastIndex++;continue;}
+   n++;
    if(first<0){first=at;firstLen=len;}
    // Der Titel steht in der App ohnehin darueber. Als Beleg taugt die erste Fundstelle im Fliesstext
    // mehr, weil sie den Zusammenhang zeigt statt die Ueberschrift zu wiederholen.

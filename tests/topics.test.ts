@@ -135,3 +135,22 @@ test('Der Name des Bundesamtes ist keine Exportkontroll-Fundstelle',()=>{
  assert.match(eeg!.snippet,/Außenwirtschaftsgesetzes/,'und sie ist der Beleg');
  assert.ok(dual('Die neue Regel zur Ausfuhrkontrolle von Laserquellen gilt ab Januar.'),'das Wort selbst bleibt ein Treffer');
 });
+
+// Ein Industriewort irgendwo im Dokument genuegte. In 265 Drucksachen betrafen dadurch 9 von 15 Treffern
+// fuer "Industrielle KI" KI-Schriftsaetze vor Gericht, Cyberangriffe, Foerderbilanzen oder die
+// Verwaltungsautomatisierung der Bundesagentur fuer Arbeit.
+test('Industrielle KI verlangt den Industriebezug im selben Satz',()=>{
+ const ki=(t:string,b:string)=>scanTopics(t,b).some(m=>m.topic==='ki');
+ assert.equal(ki('Entwurf eines Gesetzes zur Änderung der Verwaltungsgerichtsordnung','Der Einsatz künstlicher Intelligenz zur Erstellung von Schriftsätzen nimmt zu. Die Industrie begrüßt die Digitalisierung der Justiz.'),false,'das Industriewort im Nachbarsatz genügt nicht');
+ assert.equal(ki('Arbeitsförderung','Die Bundesagentur setzt bei der Automatisierung ihrer Verwaltungsabläufe verstärkt KI-Systeme ein.'),false,'Verwaltungsautomatisierung ist keine Industrie');
+ assert.equal(ki('Forschung','Maschinelles Lernen verändert die Wissenschaft.'),false,'der Fundbegriff erfüllt seinen Kontext nicht selbst');
+ assert.equal(ki('Bericht','In der Fertigung erkennt ein KI-System Fehler an Werkstücken.'),true);
+ assert.equal(ki('Bericht','Maschinelles Lernen optimiert die Produktion von Blechteilen.'),true);
+ assert.equal(ki('Stellungnahme','Die KI-Verordnung erfasst Hochrisiko-Systeme.'),true,'Regulierungsbegriffe gelten weiter ohne Kontext');
+});
+
+// Die Satzregel gilt nur fuer KI. Beim Standort haette sie die regionale Wirtschaftsfoerderung und das
+// Haushaltsbegleitgesetz verloren - "Fachkraeftemangel" ist von sich aus wirtschaftlich.
+test('Beim Wirtschaftsstandort genügt der Bezug im Dokument',()=>{
+ assert.ok(scanTopics('Neuaufstellung der Gemeinschaftsaufgabe','Der Fachkräftemangel verschärft sich. Viele Unternehmen in der Region suchen Personal.').some(m=>m.topic==='standort'));
+});

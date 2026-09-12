@@ -25,7 +25,7 @@ function sammelpapiere(items:Pick<DocumentInput,'paperKey'|'url'>[]):Set<string>
 // Aendert sich die Auswahl- oder Zuordnungslogik, holt der naechste Lauf das volle Fenster neu. Der
 // Rueckblick nach einem erfolgreichen Lauf reicht nur zwei Tage; was eine fruehere Fassung verworfen
 // oder falsch zusammengefuehrt hat, kaeme sonst nie wieder.
-export const ERFASSUNGSSTAND=3;
+export const ERFASSUNGSSTAND=4;
 const neuer=(a:string|null|undefined,b:string|null|undefined):string|null=>!a?(b??null):!b?a:a>b?a:b;
 export function asItem(raw:unknown):Item{
  const i=raw as Partial<Item>;
