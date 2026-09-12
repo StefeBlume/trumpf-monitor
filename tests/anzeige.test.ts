@@ -184,3 +184,14 @@ test('Detail- und Einstellungsseite beschreiben die Arbeitsweise zutreffend',()=
  assert.ok(!seite.includes('unverändert mit Drucksachennummer und amtlichem PDF'),'nicht jedes Dokument hat beides');
  assert.ok(!seite.includes('keine Priorisierung'),'Thementreffer stehen oben');
 });
+
+// NEXT_PUBLIC_HOSTED wurde nirgends gesetzt: ein toter Modus aus der Codex-Fassung. Trotzdem stand im
+// ausgelieferten Buendel "Bitte erneut mit ChatGPT anmelden" - lokal erschien das, sobald der Server
+// abstuerzte oder kompilierte. Eine ChatGPT-Anmeldung gibt es in dieser App nicht.
+test('Keine Reste der Codex-Fassung',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(!/HOSTED/.test(seite),'der HOSTED-Modus war nie aktiv');
+ assert.ok(!/chatgpt/i.test(seite),'es gibt keine ChatGPT-Anmeldung');
+ assert.ok(!seite.includes('iPhone und Mac müssen denselben Server'),'die iPhone-App ist gelöscht');
+ assert.ok(seite.includes('antwortet kein Monitoring-Server'),'die Meldung nennt die tatsächliche Ursache');
+});
