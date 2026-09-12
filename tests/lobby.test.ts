@@ -179,3 +179,17 @@ test('Ein fehlgeschlagener Detailabruf verwirft den bekannten Stand nicht',async
   async()=>{throw new Error('Register offline');});
  assert.equal(stand[0].projectList?.length,1,'der letzte gute Stand bleibt');
 });
+
+test('Gespeicherte Stände aus einer früheren Fassung werden beim Wiederverwenden gefiltert',async()=>{
+ // Der Zwischenspeicher hielt Vorhaben ohne Themenbezug. Da unveraenderte Eintraege gar nicht neu
+ // abgerufen werden, blieb der veroeffentlichte Stand gross.
+ const mit=mapProject(rohVorhaben)!;
+ const ohne={...mit,number:'RV-ohne',topics:[]};
+ const bekannt=new Map([['R1',{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',
+  projectList:[mit,ohne],detailFor:'2026-01-01'}]]);
+ let abrufe=0;
+ const stand=await enrichProjects([{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',projects:2}],bekannt,
+  async()=>{abrufe++;return [];});
+ assert.equal(abrufe,0,'ein unveränderter Eintrag wird nicht neu abgerufen');
+ assert.deepEqual(stand[0].projectList?.map(v=>v.number),['RV0012620'],'das themenlose Vorhaben fällt weg');
+});

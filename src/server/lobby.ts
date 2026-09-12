@@ -127,11 +127,14 @@ export async function enrichProjects(entries:LobbyEntry[],bekannt:Map<string,Lob
  for(const e of entries){
   const alt=bekannt.get(e.registerNumber);
   const aktuell=alt&&alt.detailFor===e.updatedAt&&Array.isArray(alt.projectList);
-  if(aktuell){out.push({...e,projectList:alt!.projectList,detailFor:alt!.detailFor});continue;}
+  // Auch beim Wiederverwenden filtern: ein gespeicherter Stand aus einer frueheren Fassung enthaelt
+  // noch alle Vorhaben. Ohne diesen Filter bliebe der veroeffentlichte Stand gross, weil ein
+  // unveraenderter Eintrag gar nicht erst neu abgerufen wird.
+  if(aktuell){out.push({...e,projectList:withTopics(alt!.projectList!),detailFor:alt!.detailFor});continue;}
   if(e.projects===0){out.push({...e,projectList:[],detailFor:e.updatedAt});continue;}
-  if(geholt>=grenze){out.push({...e,projectList:alt?.projectList??[],detailFor:alt?.detailFor??null});continue;}
+  if(geholt>=grenze){out.push({...e,projectList:withTopics(alt?.projectList??[]),detailFor:alt?.detailFor??null});continue;}
   try{const ps=await holen(e.registerNumber);geholt++;out.push({...e,projectList:ps,detailFor:e.updatedAt});}
-  catch{out.push({...e,projectList:alt?.projectList??[],detailFor:alt?.detailFor??null});}
+  catch{out.push({...e,projectList:withTopics(alt?.projectList??[]),detailFor:alt?.detailFor??null});}
  }
  return out;
 }
