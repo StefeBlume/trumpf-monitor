@@ -8,20 +8,13 @@
     "start": "next start --hostname 0.0.0.0 --port 4180",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "build:ios": "node scripts/mobile-build.mjs",
     "monitor": "tsx scripts/monitor.ts",
-    "sync:ios": "node scripts/sync-ios.mjs",
-    "build:cloud": "node scripts/cloud-build.mjs",
-    "db:generate": "drizzle-kit generate",
-    "build:pages": "MOBILE_EXPORT=1 NEXT_PUBLIC_STATIC=1 next build && rm -f out/connection.json"
+    "build:pages": "STATIC_EXPORT=1 NEXT_PUBLIC_STATIC=1 next build && rm -f out/connection.json"
   },
   "dependencies": {
-    "@capacitor/core": "^8.0.0",
-    "@capacitor/ios": "^8.0.0",
     "@libsql/client": "^0.15.0",
     "cheerio": "^1.1.0",
     "diff": "^8.0.0",
-    "drizzle-orm": "^0.45.2",
     "fast-xml-parser": "^5.0.0",
     "lucide-react": "^0.468.0",
     "next": "^16.0.0",
@@ -30,13 +23,9 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.0.0",
-    "@cloudflare/workers-types": "^5.20260907.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "drizzle-kit": "^0.31.10",
-    "esbuild": "^0.28.2",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   }

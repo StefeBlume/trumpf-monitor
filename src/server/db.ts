@@ -3,7 +3,6 @@ import {mkdirSync} from 'node:fs';
 let client:Client|undefined;
 export async function db():Promise<Client>{
  if(client)return client;
- if(process.env.VERCEL&&!process.env.DATABASE_URL)throw new Error('Persistente DATABASE_URL für Hosting fehlt');
  if(!process.env.DATABASE_URL)mkdirSync('data',{recursive:true});
  const c=createClient({url:process.env.DATABASE_URL||'file:data/monitor.db',authToken:process.env.DATABASE_AUTH_TOKEN});
  await c.batch([

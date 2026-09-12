@@ -1,10 +1,8 @@
 import Head from 'next/head';
 import {useEffect,useRef,useState} from 'react';
-import {Capacitor,CapacitorHttp,registerPlugin} from '@capacitor/core';
 import {Radar,LayoutDashboard,FileText,Radio,Settings,Search,ArrowUpRight,RefreshCw,ChevronRight,Clock,ShieldCheck,AlertCircle,ArrowLeft,Download,Archive,History,Check,SlidersHorizontal,X,Landmark,FileDown,Building2,Target,Quote,CalendarDays} from 'lucide-react';
 import {COMMITTEES,MINISTRIES,SOURCES,committeeById,type Dashboard,type Item,type Briefing,type Change} from '../src/model';
 import {TOPICS,topicById,topicRank,type TopicMatch} from '../src/server/topics';
-const OfflineCache=registerPlugin<{save(options:{payload:string}):Promise<void>}>('OfflineCache');
 const HOSTED=process.env.NEXT_PUBLIC_HOSTED==='1';
 // Statischer Betrieb auf GitHub Pages: kein Server, kein Schlüssel. Die Seite liest den Stand,
 // den der tägliche Lauf in bootstrap.json geschrieben hat. Alles, was einen Server braucht, entfällt.
@@ -30,10 +28,6 @@ async function request<T>(conn:Connection,path:string,method='GET',body?:unknown
  if(!HOSTED&&!conn.token)throw new Error('Bitte unter Einstellungen den Verbindungsschlüssel hinterlegen.');
  const url=(HOSTED?'':conn.url.replace(/\/$/,''))+'/api/'+path;
  const headers:Record<string,string>={'Content-Type':'application/json'};if(!HOSTED)headers.Authorization='Bearer '+conn.token;
- if(Capacitor.isNativePlatform()&&!HOSTED){
- const r=await CapacitorHttp.request({url,method,headers,data:body,connectTimeout:12000,readTimeout:300000,responseType:'json'});
- if(r.status<200||r.status>=300)throw new Error(r.data?.error??`Verbindung fehlgeschlagen (${r.status})`);return r.data;
- }
  const r=await fetch(url,{method,headers,body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(300000)});if(!r.headers.get('content-type')?.includes('application/json'))throw new Error('Bitte erneut mit ChatGPT anmelden. Dein gespeicherter Stand bleibt erhalten.');const data=await r.json() as T & {error?:string};if(!r.ok)throw new Error(data.error??'Verbindung fehlgeschlagen');return data;
 }
 export default function Home(){
@@ -44,7 +38,7 @@ export default function Home(){
  const mainRef=useRef<HTMLElement>(null);
  async function loadSnapshot(){const r=await fetch(new URL('bootstrap.json',window.location.href).href,{cache:'no-store'});if(!r.ok)throw new Error('Stand nicht erreichbar');return await r.json() as Dashboard;}
  async function reload(){setBusy(true);setError('');try{setData(await loadSnapshot());setOnline(true);setNotice('Stand neu geladen.');}catch{setOnline(false);setError('Der gespeicherte Stand konnte nicht geladen werden. Bitte Internetverbindung prüfen.');}finally{setBusy(false);}}
- const cache=(d:Dashboard)=>{setData(d);try{localStorage.setItem('policy-cache',JSON.stringify(d));if(Capacitor.isNativePlatform())void OfflineCache.save({payload:JSON.stringify(d)}).catch(()=>{});}catch{}};
+ const cache=(d:Dashboard)=>{setData(d);try{localStorage.setItem('policy-cache',JSON.stringify(d));}catch{}};
  async function refresh(c=conn){setError('');try{const d=await request<Dashboard>(c,'dashboard');cache(d);setOnline(true);return true;}catch(e){setOnline(false);setError(e instanceof Error&&/timed? ?out|timeout|network|fetch/i.test(e.message)?'Die Verbindung dauert zu lange. Bitte Internetverbindung prüfen und erneut versuchen. Dein gespeicherter Stand bleibt erhalten.':e instanceof Error?e.message:'Keine Verbindung. Dein gespeicherter Stand bleibt erhalten.');return false;}}
  useEffect(()=>{let active=true;(async()=>{
  if(STATIC){try{const d=await loadSnapshot();if(active){setData(d);setOnline(true);}}catch{if(active)setError('Der gespeicherte Stand konnte nicht geladen werden. Bitte Seite neu laden.');}finally{if(active)setReady(true);}return;}

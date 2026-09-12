@@ -68,9 +68,9 @@ npm run dev                  # http://localhost:4180
 | Variable | Pflicht | Zweck |
 |---|---|---|
 | `DIP_API_KEY` | ja | Ohne Schlüssel bleiben beide DIP-Quellen auf „Schlüssel fehlt". Öffentlicher Schlüssel und Bezugsweg: https://dip.bundestag.de/über-dip/hilfe/api |
-| `APP_TOKEN` | ja | Zugangsschlüssel der API, wird in der App unter Einstellungen hinterlegt |
-| `CRON_SECRET` | ja | Schützt `/api/cron` |
-| `DATABASE_URL` | Hosting | Lokal `file:data/monitor.db`; beim Hosting persistente libsql-URL |
+| `APP_TOKEN` | lokal | Zugangsschlüssel der API im lokalen Serverbetrieb; die veröffentlichte Seite braucht ihn nicht |
+| `CRON_SECRET` | lokal | Schützt `/api/cron` im lokalen Serverbetrieb |
+| `DATABASE_URL` | nein | Standard `file:data/monitor.db` |
 | `SCHEDULE_ENABLED` | nein | Nur auf `true` setzen, wenn ein echter Scheduler eingerichtet ist |
 | `DIP_WAHLPERIODE` | nein | Standard 21 |
 | `RETENTION_DAYS` | nein | Standard 180; `0` schaltet die Aufbewahrungsgrenze ab |
@@ -78,7 +78,7 @@ npm run dev                  # http://localhost:4180
 
 ### Zeitplan
 
-Die Zeitsteuerung liegt beim Scheduler, nicht im Code: `runMonitor()` läuft, wann immer es aufgerufen wird, und schützt sich nur über eine Sperre gegen parallele Läufe. `vercel.json` ruft `/api/cron` auf; der Aufruf braucht `Authorization: Bearer $CRON_SECRET`.
+Die Zeitsteuerung liegt beim Scheduler, nicht im Code: `runMonitor()` läuft, wann immer es aufgerufen wird, und schützt sich nur über eine Sperre gegen parallele Läufe. Im Betrieb ruft der GitHub-Workflow `npm run monitor` auf. Lokal gibt es zusätzlich `/api/cron`, abgesichert über `Authorization: Bearer $CRON_SECRET`.
 
 ## Änderungserkennung
 
@@ -130,3 +130,9 @@ npm test
 `tests/topics.test.ts` deckt die Themensuche ab: Stimmigkeit des Rasters, Erkennung aller TRUMPF-Kernthemen, Abkürzungen nur in Großschreibung, industrieller Kontext für KI und die breiten Standortbegriffe, deutsche Beugung samt Zeilenumbruch, Zählung und Titelvermerk, Reihenfolge und die Belegqualität.
 
 `tests/hardening.test.ts` deckt die Randfälle ab, die im Audit aufgefallen sind: fremde Adressen aus fremdem Markup, unsichtbare Trennzeichen, Formatbrüche gegen legitime Leerergebnisse, keine Wiederholung dauerhafter Fehler, Datumsüberlauf (der 31. Februar wurde zum 3. März), Namensabgleich über alle 24 echten Ausschussbezeichnungen, Aufbewahrung, sichtbare Teilausfälle und unvollständige API-Antworten.
+
+## Was die App ausmacht
+
+Der laufende Betrieb besteht aus dem Code in `src`, `pages` und `scripts`, dem Zeitplan in `.github/workflows/monitor.yml` und dem veröffentlichten Stand in `public/bootstrap.json`. Alles andere im Ordner ist Werkzeug: `node_modules` lässt sich per `npm install` jederzeit neu laden, `data/` und `out/` entstehen beim Lauf.
+
+Aus dem ursprünglichen Codex-Bau stammten außerdem ein iPhone-Wrapper (Capacitor), ein Cloudflare-Worker, eine Vercel-Konfiguration und Drizzle-Migrationen. Keines davon war am Betrieb beteiligt; alles wurde entfernt. Die Historie liegt in Git, falls es je gebraucht wird.

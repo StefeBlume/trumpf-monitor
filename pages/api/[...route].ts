@@ -6,9 +6,6 @@ export const config={api:{bodyParser:{sizeLimit:'32kb'}},maxDuration:300};
 function authorized(req:NextApiRequest,secret:string|undefined){if(!secret)return false;const expected=Buffer.from('Bearer '+secret),actual=Buffer.from(req.headers.authorization??'');return expected.length===actual.length&&timingSafeEqual(expected,actual);}
 export default async function handler(req:NextApiRequest,res:NextApiResponse){
  res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
- const origin=req.headers.origin;
- if(origin==='capacitor://localhost'){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type');res.setHeader('Access-Control-Allow-Methods','GET, POST, PATCH, OPTIONS');}
- if(req.method==='OPTIONS'){res.status(204).end();return;}
  const route=(req.query.route as string[]??[]).join('/');
  if(route==='health'&&req.method==='GET'){res.json({ok:true,service:'Policy Monitor',authenticationRequired:true});return;}
  if(!authorized(req,route==='cron'?process.env.CRON_SECRET:process.env.APP_TOKEN)){res.status(401).json({error:'Verbindungsschlüssel fehlt oder ist ungültig. Bitte Verbindung prüfen.'});return;}
