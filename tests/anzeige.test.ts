@@ -128,3 +128,11 @@ test('Die Quellenliste wird auf dem Telefon einspaltig',()=>{
  const leiste=css.match(/\.bottom-nav\{[^}]*grid-template-columns:([^;}]+)/g)??[];
  assert.ok(leiste.length>0&&leiste.every(r=>/repeat\((5|6),minmax\(0,1fr\)\)/.test(r)),'jede Fussleisten-Regel braucht schrumpfbare Spalten: '+leiste.join(' | '));
 });
+
+// "(Umsatzsteuerschlüsselzahlenfestsetzungsverordnung" ist 420px breit und stand in einer 278px
+// breiten Karte - drei von 108 Titeln trugen ein Wort, das keine Handybreite fasst.
+test('Überlange Amtswörter brechen um',()=>{
+ const css=readFileSync('src/ui/style.css','utf8');
+ assert.match(css,/h1,h2,h3,p,strong,li,td,th\{overflow-wrap:break-word\}/,'lange Wörter müssen umbrechen dürfen');
+ assert.match(css,/\.item-card h3[^{]*\{hyphens:auto\}/,'Dokumenttitel werden nach deutschen Regeln getrennt');
+});
