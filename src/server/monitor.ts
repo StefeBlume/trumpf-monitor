@@ -1,7 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
-import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash,dipUrl,sitzungstag} from './parsing';import {TOPICS} from './topics';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
+import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash,dipUrl,sitzungstag} from './parsing';import {TOPICS} from './topics';import {rasterFingerabdruck} from './raster';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
 // Stände aus einer früheren Fassung tragen neuere Felder noch nicht. Jeder Leser bekommt deshalb
 // vollständige Listen, statt an einem fehlenden Feld zu scheitern - genau daran brach ein Lauf ab.
 // Die kurzen DIP-Adressen aus frueheren Fassungen fuehren auf "Seite nicht gefunden". Ein Eintrag
@@ -32,8 +32,7 @@ function sammelpapiere(items:Pick<DocumentInput,'paperKey'|'url'>[]):Set<string>
 // Logik 6: Abgleich der DIP-Quellen. Ein voller Abruf raeumt dabei Eintraege ab, die frueher verworfene
 // Dokumente mit veralteten Treffern hinterlassen haben.
 export function erfassungsstand(topics:unknown,logik=6):string{
- const raster=JSON.stringify(topics,(_k,v)=>v instanceof RegExp?`/${v.source}/${v.flags}`:v);
- return `${logik}:${createHash('sha256').update(raster).digest('hex').slice(0,12)}`;
+ return `${logik}:${rasterFingerabdruck(topics)}`;
 }
 export const ERFASSUNGSSTAND=erfassungsstand(TOPICS);
 const neuer=(a:string|null|undefined,b:string|null|undefined):string|null=>!a?(b??null):!b?a:a>b?a:b;

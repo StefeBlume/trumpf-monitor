@@ -100,6 +100,7 @@ test('Ein Ausfall des Registers lässt die Dokumentquellen unberührt',async()=>
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
 import {mapProject,enrichProjects,withTopics,kappen,MAX_PROJECTS_PER_ENTRY,type LobbyProject} from '../src/server/lobby';
+import {RASTER} from '../src/server/raster';
 
 // Aus der echten Detailantwort des Registers gekürzt.
 const rohVorhaben={regulatoryProjectNumber:'RV0012620',
@@ -190,7 +191,7 @@ test('Gespeicherte Stände aus einer früheren Fassung werden beim Wiederverwend
  const ohne={...mit,number:'RV-ohne',topics:[]};
  // Mit aktueller Kappungsgrenze gespeichert, nur der Themenfilter fehlte.
  const bekannt=new Map([['R1',{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',
-  projectList:[mit,ohne],detailFor:'2026-01-01',capAt:MAX_PROJECTS_PER_ENTRY}]]);
+  projectList:[mit,ohne],detailFor:'2026-01-01',capAt:MAX_PROJECTS_PER_ENTRY,rasterFor:RASTER}]]);
  let abrufe=0;
  const stand=await enrichProjects([{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',projects:2}],bekannt,
   async()=>{abrufe++;return [];});
@@ -259,4 +260,26 @@ test('Das Geschäftsjahr der Ausgaben wird vollständig genannt',()=>{
  assert.equal(geschaeftsjahr({relatedFiscalYearEnd:'2025-06-30'}),'2025','ohne Beginn bleibt das Endjahr');
  assert.equal(geschaeftsjahr({}),null);
  assert.equal(geschaeftsjahr({relatedFiscalYearEnd:'unbekannt'}),null);
+});
+
+// Vorhaben tragen die Themen ihres Abrufs. Nach den Korrekturen am Raster behielten VDMA ("EU RL MID")
+// "Industrielle KI" und BDEW zwei Vorhaben mit "Dual-Use", die heute kein solches Thema haben: ihr
+// Registerstand war unveraendert, also wurde nichts neu gescannt. 206 Vorhaben verglichen, 3 veraltet.
+test('Ein geändertes Themenraster lässt die Vorhaben neu scannen',async()=>{
+ const mit=mapProject(rohVorhaben)!;
+ const veraltet={...bau('R1',['ki','laser']),updatedAt:'2026-01-01',projects:2,projectList:[{...mit,topics:['ki']}],
+  detailFor:'2026-01-01',topicProjects:1,capAt:MAX_PROJECTS_PER_ENTRY,rasterFor:'altes-raster'};
+ let abrufe=0;
+ const neu=await enrichProjects([{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',projects:2}],new Map([['R1',veraltet]]),async()=>{abrufe++;return [mit];});
+ assert.equal(abrufe,1,'ein anderes Raster verlangt einen Neuabruf');
+ assert.deepEqual(neu[0].projectList!.map(v=>v.topics),[mit.topics],'die Themen stammen aus dem heutigen Scan');
+ assert.equal(neu[0].rasterFor,RASTER);
+ let zweite=0;
+ await enrichProjects([{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',projects:2}],new Map([['R1',neu[0]]]),async()=>{zweite++;return [];});
+ assert.equal(zweite,0,'mit dem heutigen Raster wird wiederverwendet');
+ // Auch ohne vermerktes Raster (Stand vor dieser Fassung) wird neu gescannt.
+ let dritte=0;
+ const {rasterFor:_,...ohneVermerk}=veraltet;
+ await enrichProjects([{...bau('R1',['ki','laser']),updatedAt:'2026-01-01',projects:2}],new Map([['R1',ohneVermerk]]),async()=>{dritte++;return [mit];});
+ assert.equal(dritte,1);
 });

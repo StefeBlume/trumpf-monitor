@@ -1,6 +1,7 @@
 import {TOPICS,scanTopics} from './topics';
 import {fetchOfficial} from './connectors';
 import {clean,officialURL} from './parsing';
+import {RASTER} from './raster';
 // Das Lobbyregister des Bundestags fuehrt, wer sich beruflich fuer welche Interessen einsetzt.
 // Je Thema eine eigene Abfrage; die Begriffe sind enger als im Volltextraster, weil das Register
 // mit Interessenfeldern arbeitet und breite Begriffe wie "Industriepolitik" tausende Eintraege
@@ -36,7 +37,7 @@ export interface LobbyEntry {
  // capAt haelt fest, mit welcher Grenze gespeichert wurde. Ohne diese Angabe behaelt ein
  // Zwischenspeicher die Kappung einer frueheren Fassung fuer immer: der Eintrag gilt als aktuell,
  // wird nie neu geholt, und die Karte nennt weiter zu wenige Vorhaben.
- projectList?:LobbyProject[]; detailFor?:string|null; topicProjects?:number; capAt?:number;
+ projectList?:LobbyProject[]; detailFor?:string|null; topicProjects?:number; capAt?:number; rasterFor?:string|null;
 }
 export function mapProject(p:any):LobbyProject|null{
  const nummer=typeof p?.regulatoryProjectNumber==='string'?p.regulatoryProjectNumber:null;
@@ -147,15 +148,17 @@ export async function enrichProjects(entries:LobbyEntry[],bekannt:Map<string,Lob
  const out:LobbyEntry[]=[];
  for(const e of entries){
   const alt=bekannt.get(e.registerNumber);
-  const aktuell=alt&&alt.detailFor===e.updatedAt&&Array.isArray(alt.projectList)&&alt.capAt===MAX_PROJECTS_PER_ENTRY;
+  // Auch das Raster muss stimmen: nach den Korrekturen am Themenraster behielten VDMA und BDEW "Industrielle KI"
+  // und "Dual-Use" bei Vorhaben, die heute kein solches Thema haben, weil ihr Registerstand unveraendert war.
+  const aktuell=alt&&alt.detailFor===e.updatedAt&&Array.isArray(alt.projectList)&&alt.capAt===MAX_PROJECTS_PER_ENTRY&&alt.rasterFor===RASTER;
   // Auch beim Wiederverwenden filtern: ein gespeicherter Stand aus einer frueheren Fassung enthaelt
   // noch alle Vorhaben. Ohne diesen Filter bliebe der veroeffentlichte Stand gross, weil ein
   // unveraenderter Eintrag gar nicht erst neu abgerufen wird.
-  if(aktuell){const g=withTopics(alt!.projectList!);out.push({...e,projectList:kappen(g),detailFor:alt!.detailFor,topicProjects:alt!.topicProjects??g.length,capAt:MAX_PROJECTS_PER_ENTRY});continue;}
-  if(e.projects===0){out.push({...e,projectList:[],detailFor:e.updatedAt,topicProjects:0,capAt:MAX_PROJECTS_PER_ENTRY});continue;}
-  if(geholt>=grenze){const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length,capAt:alt?.capAt});continue;}
-  try{const ps=await holen(e.registerNumber);geholt++;const g=withTopics(ps);out.push({...e,projectList:kappen(g),detailFor:e.updatedAt,topicProjects:g.length,capAt:MAX_PROJECTS_PER_ENTRY});}
-  catch{const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length,capAt:alt?.capAt});}
+  if(aktuell){const g=withTopics(alt!.projectList!);out.push({...e,projectList:kappen(g),detailFor:alt!.detailFor,topicProjects:alt!.topicProjects??g.length,capAt:MAX_PROJECTS_PER_ENTRY,rasterFor:RASTER});continue;}
+  if(e.projects===0){out.push({...e,projectList:[],detailFor:e.updatedAt,topicProjects:0,capAt:MAX_PROJECTS_PER_ENTRY,rasterFor:RASTER});continue;}
+  if(geholt>=grenze){const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length,capAt:alt?.capAt,rasterFor:alt?.rasterFor??null});continue;}
+  try{const ps=await holen(e.registerNumber);geholt++;const g=withTopics(ps);out.push({...e,projectList:kappen(g),detailFor:e.updatedAt,topicProjects:g.length,capAt:MAX_PROJECTS_PER_ENTRY,rasterFor:RASTER});}
+  catch{const g=withTopics(alt?.projectList??[]);out.push({...e,projectList:kappen(g),detailFor:alt?.detailFor??null,topicProjects:alt?.topicProjects??g.length,capAt:alt?.capAt,rasterFor:alt?.rasterFor??null});}
  }
  return out;
 }
