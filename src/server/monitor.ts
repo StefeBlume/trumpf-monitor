@@ -163,7 +163,10 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  const eigenerStand=(i:Item):DocumentInput=>source.kind==='committee-dip'?{...i,ministries:[]}:source.kind==='fulltext-dip'?{...i,committees:[],lead:null}:i;
  const gleich=!!old&&(hash===old.hash||hash===contentHash(eigenerStand(old)));
  const change=old?(gleich?'unchanged':'changed'):(baseline?'baseline':'new');
- const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(change==='changed'?1:0):1,change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false,quelleStand:doc.updatedAt??doc.publishedAt??null};
+ // Gespeichert wird die Art der letzten echten Aenderung; wann sie war, steht in changedAt. Mit "unchanged" bei
+ // jeder erneuten Lieferung trug nach 30 Minuten jede Karte "Unveraendert". Briefing und Aenderungslog nutzen
+ // weiter das Ergebnis dieses Laufs.
+ const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(change==='changed'?1:0):1,change:change==='unchanged'&&old&&old.change!=='unchanged'?old.change:change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false,quelleStand:doc.updatedAt??doc.publishedAt??null};
  if(item.paperKey)jePapier.set(item.paperKey,item);
  statements.push({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[itemId,source.id,JSON.stringify(item)]});
  if(change!=='unchanged'){

@@ -681,3 +681,22 @@ test('Die Zusammenfassung zählt richtig und beugt richtig',()=>{
  assert.match(briefingSummary([item([],'baseline')],true,4,0,0),/^Ausgangsstand mit 1 Dokument angelegt\./);
  assert.match(briefingSummary([],false,3,1,1),/1 Quellenfehler, 1 offene Anbindung\./);
 });
+
+// Mit "unchanged" bei jeder erneuten Lieferung verlor ein Dokument nach 30 Minuten seine Kennzeichnung.
+test('Ein erneut geliefertes Dokument behält die Art seiner letzten echten Änderung',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-status-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const quelle:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ try{
+ await runMonitor({sources:[quelle],fetcher:async()=>[]});
+ const erst=await runMonitor({sources:[quelle],fetcher:async()=>[{...doc,externalId:'n1'}]});
+ assert.equal(erst?.items[0]?.change,'new');
+ const zeitpunkt=(await dashboard()).items[0].changedAt;
+ const zweit=await runMonitor({sources:[quelle],fetcher:async()=>[{...doc,externalId:'n1'}]});
+ assert.equal(zweit?.items.length,0,'der Lauf meldet nichts Neues');
+ const i=(await dashboard()).items[0];
+ assert.equal(i.change,'new','gespeichert bleibt die letzte echte Änderung');
+ assert.equal(i.changedAt,zeitpunkt,'mit ihrem Zeitpunkt');
+ const echt=await runMonitor({sources:[quelle],fetcher:async()=>[{...doc,externalId:'n1',step:'Beschlussempfehlung'}]});
+ assert.equal(echt?.items[0]?.change,'changed');
+ assert.equal((await dashboard()).items[0].change,'changed');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});

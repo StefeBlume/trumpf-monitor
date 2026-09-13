@@ -52,3 +52,12 @@ export function datum(s:string|null|undefined,mitZeit=false):string{
 // Liegt hier und nicht in src/server/lobby.ts: die Oberflaeche importierte die Funktion von dort und zog damit
 // Connectors, den HTML-Parser cheerio und einen Krypto-Ersatz in den Browser - 655 KB von 1,0 MB JavaScript.
 export const withTopics=(ps:LobbyProject[])=>ps.filter(p=>p.topics.length);
+
+// "Neu" und "Geändert" galten nur bis zum nächsten Lauf. Bei Abrufen alle 30 Minuten trug danach jede Karte
+// "Unverändert" - live alle 129 Dokumente, auch eines, das erst 11 Stunden zuvor hereingekommen war -, und der
+// Statusfilter "Neu" blieb leer. Ein Dokument ausserhalb des Rückblickfensters behielt "Neu" dagegen dauerhaft.
+// Angezeigt wird deshalb die letzte echte Änderung, 24 Stunden lang.
+export const STATUS_STUNDEN=24;
+export function anzeigeStatus(i:Pick<Item,'change'|'changedAt'>,jetzt=Date.now()):Item['change']{
+ return i.change!=='unchanged'&&jetzt-Date.parse(i.changedAt)<STATUS_STUNDEN*3600000?i.change:'unchanged';
+}

@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {recency,datumsteil,suchtext,bewegungswort,datum,nurTag} from '../src/ui/format';
+import {recency,datumsteil,suchtext,bewegungswort,datum,nurTag,anzeigeStatus} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
  url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
@@ -335,4 +335,20 @@ test('Fehlerseite und Dokumentansicht behaupten nichts Falsches',()=>{
  const seite=readFileSync('pages/index.tsx','utf8');
  assert.ok(!seite.includes('Warum dieses Dokument erscheint'),'Ausschusspositionen erscheinen wegen der Überweisung');
  assert.ok(seite.includes("selected.documentType==='Plenarprotokoll'?'Keine – die Fundstelle ist ein Plenarprotokoll'"));
+});
+
+// Alle 129 Dokumente trugen live "Unverändert", auch eines, das 11 Stunden zuvor hereingekommen war, und der Filter
+// "Neu" blieb leer: der Status galt nur bis zum nächsten 30-Minuten-Lauf.
+test('Neu und Geändert gelten 24 Stunden nach der letzten echten Änderung',()=>{
+ const jetzt=Date.parse('2026-09-13T08:00:00.000Z');
+ const vor=(h:number)=>new Date(jetzt-h*3600000).toISOString();
+ assert.equal(anzeigeStatus({change:'new',changedAt:vor(11)},jetzt),'new','elf Stunden alt ist neu');
+ assert.equal(anzeigeStatus({change:'changed',changedAt:vor(23)},jetzt),'changed');
+ assert.equal(anzeigeStatus({change:'new',changedAt:vor(25)},jetzt),'unchanged','nach einem Tag nicht mehr');
+ assert.equal(anzeigeStatus({change:'baseline',changedAt:vor(2)},jetzt),'baseline');
+ assert.equal(anzeigeStatus({change:'unchanged',changedAt:vor(1)},jetzt),'unchanged');
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(!seite.includes('i.change===status'),'der Filter nutzt die Anzeige');
+ assert.ok(!seite.includes('labels[item.change]')&&!seite.includes('labels[selected.change]'),'Karte und Dokumentansicht nutzen die Anzeige');
+ assert.ok(seite.includes('labels[e.change]'),'das Änderungslog bleibt ein Laufprotokoll');
 });
