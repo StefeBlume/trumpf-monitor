@@ -50,8 +50,9 @@ test('Industrielle KI zählt nur mit Fertigungsbezug',()=>{
  assert.equal(scanTopics('Musikveranstaltungen der extremen Rechten','Zunehmend wird durch künstliche Intelligenz generierte Musik verbreitet.').length,0);
  const industriell=scanTopics('Bericht zur Digitalisierung','Künstliche Intelligenz steuert die Fertigung in der Produktion zunehmend selbst.');
  assert.ok(industriell.some(m=>m.topic==='ki'),'mit Fertigungsbezug muss es treffen');
- // Regulierungsbegriffe gelten auch ohne Kontext, weil sie Maschinen unmittelbar erfassen.
- assert.ok(scanTopics('Umsetzung der KI-Verordnung').some(m=>m.topic==='ki'));
+ // Auch die Regulierungsbegriffe brauchen den Industriebezug: live standen sie in Datenschutz- und Nachrichtendiensttexten.
+ assert.ok(!scanTopics('Umsetzung der KI-Verordnung').some(m=>m.topic==='ki'),'ohne Industriewort kein Treffer');
+ assert.ok(scanTopics('Umsetzung der KI-Verordnung für Maschinen').some(m=>m.topic==='ki'),'mit Industriewort schon');
 });
 
 test('Breite Standortbegriffe brauchen ebenfalls industriellen Bezug',()=>{
@@ -146,7 +147,12 @@ test('Industrielle KI verlangt den Industriebezug im selben Satz',()=>{
  assert.equal(ki('Forschung','Maschinelles Lernen verändert die Wissenschaft.'),false,'der Fundbegriff erfüllt seinen Kontext nicht selbst');
  assert.equal(ki('Bericht','In der Fertigung erkennt ein KI-System Fehler an Werkstücken.'),true);
  assert.equal(ki('Bericht','Maschinelles Lernen optimiert die Produktion von Blechteilen.'),true);
- assert.equal(ki('Stellungnahme','Die KI-Verordnung erfasst Hochrisiko-Systeme.'),true,'Regulierungsbegriffe gelten weiter ohne Kontext');
+ assert.equal(ki('Stellungnahme','Die KI-Verordnung erfasst Hochrisiko-Systeme.'),false,'die Verordnung allein ist keine Industrie');
+ assert.equal(ki('Stellungnahme','Die KI-Verordnung stuft KI-Steuerungen in Maschinen als Hochrisiko ein.'),true,'neben Maschinen zählt sie');
+ // Live-Fehltreffer vom 13.09.:
+ assert.equal(ki('Schriftliche Fragen','Die Bundesverwaltung achtet bei der Nutzung von KI-Sprachmodellen insbesondere auf die Vorgaben der KI-Verordnung sowie der DS-GVO.'),false,'Verwaltung und Datenschutz');
+ assert.equal(ki('Mitteilung der Kommission','Solche Anwendungen werden häufig als Hochrisiko-KI-Systeme gemäß Anhang III Nummern 4 und 5 der KI-Verordnung eingestuft.'),false,'Anhang III betrifft Beschäftigung und Leistungen');
+ assert.equal(ki('Bericht','Die Simulation industrieller Prozesse und die Künstliche Intelligenz sind Schlüsselbereiche.'),true,'der echte Treffer bleibt');
 });
 
 // Die Satzregel gilt nur fuer KI. Beim Standort haette sie die regionale Wirtschaftsfoerderung und das

@@ -43,8 +43,11 @@ export const TOPICS:Topic[] = [
  {id:'maschinen',label:'Werkzeugmaschinen & Fertigung',why:'Zweites Kerngeschäft: Blechbearbeitung, Stanzen, Biegen, Automatisierung.',
   terms:['werkzeugmaschine','maschinenbau','maschinensicherheit','blechbearbeitung','fertigungstechnik','maschinenverordnung','maschinenrichtlinie','produktsicherheit','additive fertigung','3d-druck','industrie 4.0','smart factory','ce-kennzeichnung','betriebssicherheitsverordnung']},
  {id:'ki',label:'Industrielle KI',why:'KI in Fertigung und Maschinensteuerung: KI-Verordnung, Hochrisiko-Einstufung von Maschinen, Fertigungssoftware.',
-  terms:['ki-verordnung','ki-gesetz','hochrisiko-ki','ai act','industrielle ki','ki in der produktion','ki-gestützte fertigung','predictive maintenance'],
-  context:{terms:['künstliche intelligenz','maschinelles lernen','artificial intelligence','ki-system','ki-modell','ki-anwendung','algorithmische entscheidung'],
+  // Die Regulierungsbegriffe galten ohne Industriebezug, "weil sie Maschinen unmittelbar erfassen". Live betrafen 4 von 6 Treffern
+  // keine Industrie: KI-Sprachmodelle der Verwaltung, Anhang III (Beschaeftigung, Leistungen), Nachrichtendienstrecht, eine
+  // Aufzaehlung von Rechtsrahmen. "KI" heisst hier Industrielle KI - auch die Verordnung zaehlt nur neben einem Industriewort.
+  terms:['industrielle ki','ki in der produktion','ki-gestützte fertigung','predictive maintenance'],
+  context:{terms:['künstliche intelligenz','maschinelles lernen','artificial intelligence','ki-system','ki-modell','ki-anwendung','algorithmische entscheidung','ki-verordnung','ki-gesetz','hochrisiko-ki','ai act'],
    with:['produktion','fertigung','industrie','maschine','werkzeugmaschine','anlagenbau','qualitätssicherung','smart factory','industrie 4.0','produktionsprozess'],
    naehe:'satz'}},
  {id:'hightech',label:'Hochtechnologie & Förderung',why:'Forschungsförderung und Schlüsseltechnologien betreffen TRUMPFs Entwicklungsbudget.',
