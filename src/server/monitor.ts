@@ -246,7 +246,9 @@ export async function seedFromSnapshot(snapshot:{items?:Item[];events?:Event[];b
 // (Bewegung laut Quelle, sonst Veroeffentlichung, sonst Erstkontakt) - nicht der letzte Abruf, sonst
 // blieben monatealte Papiere liegen, nur weil die App sie gestern wiedergesehen hat.
 // Kuenftige Termine haben ein Datum in der Zukunft und werden dadurch nie entfernt.
-// Archiviertes bleibt, weil es bewusst aufgehoben wurde.
+// Die Vorgabe lautet: alles, was aelter als die Frist ist, wird geloescht. Archiviertes blieb frueher dauerhaft; Briefings
+// wurden nur nach Anzahl geloescht - bei etwa einem Briefing am Tag zeigten die zwoelf ausgelieferten dann Dokumentkopien
+// von vor zwoelf Tagen. Jetzt gilt die Frist fuer Dokumente, Briefings, Aenderungslog und fruehere Versionen.
 export async function prune(days:number,gueltigeQuellen?:string[]):Promise<number>{
  const c=await db();
  // Wird eine Quelle umbenannt oder entfernt, bleiben ihre Dokumente sonst liegen: sie erscheinen in
@@ -258,8 +260,15 @@ export async function prune(days:number,gueltigeQuellen?:string[]):Promise<numbe
  await c.execute('DELETE FROM briefings WHERE rowid NOT IN (SELECT rowid FROM briefings ORDER BY rowid DESC LIMIT 60)');
  await c.execute({sql:'DELETE FROM entfernt WHERE at<?',args:[new Date(Date.now()-400*86400000).toISOString()]});
  const cutoff=new Date(Date.now()-days*86400000).toISOString();
- const stale=await c.execute({sql:`SELECT id,source_id,json_extract(data,'$.externalId') ext,json_extract(data,'$.publishedAt') pub,json_extract(data,'$.updatedAt') upd FROM items WHERE json_extract(data,'$.archived')=0
-  AND COALESCE(json_extract(data,'$.updatedAt'),json_extract(data,'$.publishedAt'),json_extract(data,'$.firstSeen'))<?`,args:[cutoff]});
+ // Das Briefing des laufenden Laufs entsteht erst nach der Aufbewahrung und bleibt deshalb immer erhalten.
+ await c.batch([
+  {sql:"DELETE FROM briefings WHERE json_extract(data,'$.createdAt')<?",args:[cutoff]},
+  {sql:"DELETE FROM events WHERE json_extract(data,'$.at')<?",args:[cutoff]},
+  // Fruehere Versionen fallen weg, der aktuelle Stand eines vorhandenen Dokuments nicht.
+  {sql:"DELETE FROM versions WHERE json_extract(data,'$.changedAt')<? AND NOT EXISTS (SELECT 1 FROM items WHERE items.id=versions.item_id AND json_extract(items.data,'$.version')=versions.version)",args:[cutoff]}
+ ],'write');
+ const stale=await c.execute({sql:`SELECT id,source_id,json_extract(data,'$.externalId') ext,json_extract(data,'$.publishedAt') pub,json_extract(data,'$.updatedAt') upd FROM items WHERE
+  COALESCE(json_extract(data,'$.updatedAt'),json_extract(data,'$.publishedAt'),json_extract(data,'$.firstSeen'))<?`,args:[cutoff]});
  const ids=stale.rows.map(r=>String(r.id));
  if(!ids.length)return 0;
  const list=ids.map(()=>'?').join(',');

@@ -547,3 +547,12 @@ test('Zahlen vor Wörtern stimmen auch bei genau 1',()=>{
  assert.ok(seite.includes("{ohneGremium.length===1?'Es erscheint':'Sie erscheinen'}"));
  assert.ok(seite.includes("${s.count===1?'Akteur':'Akteure'} im Register"),'1 Akteur');
 });
+
+// "Die App bewertet nicht" - die Startseite hieß aber "Was TRUMPF betrifft.", direkt über "ohne Bewertung". Die Akteure-Seite
+// deutete "Wo viele gleichzeitig arbeiten, bewegt sich etwas" und nannte "Wettbewerber", die das Register nicht ausweist.
+test('Die Oberfläche beschreibt Funde, statt sie zu deuten',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ for(const wertend of ['Was TRUMPF betrifft','bewegt sich etwas','Wettbewerber'])assert.ok(!seite.includes(wertend),wertend);
+ assert.ok(seite.includes('<h1>Wo TRUMPF-Themen vorkommen.</h1>'));
+ assert.ok(seite.includes('registrierte Interessenvertreter nach eigener Angabe arbeiten'));
+});

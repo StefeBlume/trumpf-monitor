@@ -120,7 +120,7 @@ test('Auswahl und Quellen bleiben in sich stimmig',()=>{
 });
 
 // --- Aufbewahrung ------------------------------------------------------------------------------
-test('Aufbewahrung entfernt Altes, verschont Archiviertes und Frisches',async()=>{
+test('Aufbewahrung entfernt Altes, auch Archiviertes, und verschont Frisches',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'policy-prune-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
  const source:Source={id:'dip-committees',name:'T',institution:'T',url:base,kind:'committee-dip',note:'Fixture'};
  try{
@@ -136,13 +136,41 @@ test('Aufbewahrung entfernt Altes, verschont Archiviertes und Frisches',async()=
  assert.equal(await prune(180),1,'nur das alte Dokument faellt weg');
  assert.deepEqual((await dashboard()).items.map(i=>i.externalId),['frisch']);
  const frisch=(await dashboard()).items[0];
+ // Die Vorgabe: alles, was aelter als die Frist ist, wird geloescht - auch Archiviertes.
  await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...frisch,updatedAt:lange,archived:true}),frisch.id]});
- assert.equal(await prune(180),0,'Archiviertes bleibt erhalten');
- assert.equal((await dashboard()).items.length,1);
+ assert.equal(await prune(180),1,'auch Archiviertes jenseits der Frist faellt weg');
+ assert.equal((await dashboard()).items.length,0);
  // Kuenftige Termine liegen jenseits der Frist und duerfen nie entfernt werden.
  const morgen=new Date(Date.now()+30*86400000).toISOString();
- await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...frisch,updatedAt:morgen,archived:false}),frisch.id]});
+ await c.execute({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?)',args:[frisch.id,frisch.sourceId,JSON.stringify({...frisch,updatedAt:morgen,archived:false})]});
  assert.equal(await prune(10),0,'ein Termin in der Zukunft bleibt');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Briefings wurden nur nach Anzahl geloescht (die letzten 60), ausgeliefert die letzten zwoelf. Bei etwa einem Briefing am
+// Tag zeigte die App dann Dokumentkopien von vor zwoelf Tagen. Aenderungslog und fruehere Versionen blieben unbegrenzt.
+test('Die Frist gilt auch für Briefings, Änderungslog und frühere Versionen',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-frist-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const source:Source={id:'dip-committees',name:'T',institution:'T',url:base,kind:'committee-dip',note:'Fixture'};
+ try{
+ await runMonitor({sources:[source],fetcher:async()=>[doc({externalId:'bleibt'})],retentionDays:0});
+ const {db}=await import('../src/server/db');const c=await db();
+ const item=(await dashboard()).items[0];
+ const alt=new Date(Date.now()-20*86400000).toISOString(),neu=new Date().toISOString();
+ await c.batch([
+  {sql:'INSERT INTO briefings(id,day,data) VALUES(?,?,?)',args:['alt','x',JSON.stringify({id:'alt',createdAt:alt,day:'x',baseline:false,summary:'alt',items:[],coverage:{ok:1,failed:0,manual:0},errors:[]})]},
+  {sql:'INSERT INTO events(id,run_id,data) VALUES(?,?,?)',args:['e-alt','r',JSON.stringify({id:'e-alt',itemId:item.id,title:'x',at:alt,change:'changed',sourceId:item.sourceId,version:1})]},
+  // Eine fruehere Version von vor zwanzig Tagen und der aktuelle Stand, der ebenfalls vor zwanzig Tagen entstand.
+  {sql:'INSERT OR REPLACE INTO versions(item_id,version,data) VALUES(?,?,?)',args:[item.id,0,JSON.stringify({...item,version:0,changedAt:alt})]},
+  {sql:'INSERT OR REPLACE INTO versions(item_id,version,data) VALUES(?,?,?)',args:[item.id,item.version,JSON.stringify({...item,changedAt:alt})]}
+ ],'write');
+ await prune(10);
+ const d=await dashboard();
+ assert.ok(!d.briefings.some(b=>b.id==='alt'),'das alte Briefing ist weg');
+ assert.ok(d.briefings.length>=1,'das Briefing des Laufs bleibt');
+ assert.ok(!d.events.some(e=>e.id==='e-alt'),'der alte Logeintrag ist weg');
+ const v=(await c.execute({sql:'SELECT version FROM versions WHERE item_id=? ORDER BY version',args:[item.id]})).rows.map(r=>Number(r.version));
+ assert.deepEqual(v,[item.version],'die fruehere Version faellt, der aktuelle Stand des Dokuments bleibt');
+ assert.equal(d.items.length,1,'das Dokument selbst liegt im Zeitraum und bleibt');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
 // --- Teilausfall wird sichtbar -----------------------------------------------------------------
