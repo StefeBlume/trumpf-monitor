@@ -70,6 +70,18 @@ export function datum(s:string|null|undefined,mitZeit=false):string{
  return new Intl.DateTimeFormat('de-DE',f).format(new Date(s));
 }
 
+// Wie eine Quellenkarte ihren Stand benennt. Ein Abruf mit Warnung ("2 von 10 Terminlisten nicht erreichbar")
+// speichert "partial"; die Karte kannte den Wert nicht und schrieb "Offen" - das die Quellenseite als "wird noch
+// nicht automatisch ueberwacht" erklaert. Nach einem Fehler tragen Zeitpunkt und Anzahl den letzten erfolgreichen
+// Abruf; die Karte nannte sie trotzdem "beim letzten Abruf".
+export function quellenStand(s:{status?:string}):{label:string;klasse:'success'|'warning'|'failure'|'neutral';vorsatz:string;abruf:string}{
+ const label=s.status==='ok'?'Abruf erfolgreich':s.status==='partial'?'Teilweise abgerufen':s.status==='error'?'Abruf fehlgeschlagen'
+  :s.status==='pending'?'Bereit für Erstabruf':s.status==='setup'?'Schlüssel fehlt':'Offen';
+ const klasse=s.status==='ok'?'success':s.status==='partial'?'warning':s.status==='error'?'failure':'neutral';
+ const fehler=s.status==='error';
+ return {label,klasse,vorsatz:fehler?'Zuletzt erfolgreich: ':'',abruf:fehler?'beim letzten erfolgreichen Abruf':'beim letzten Abruf'};
+}
+
 // Liegt hier und nicht in src/server/lobby.ts: die Oberflaeche importierte die Funktion von dort und zog damit
 // Connectors, den HTML-Parser cheerio und einen Krypto-Ersatz in den Browser - 655 KB von 1,0 MB JavaScript.
 export const withTopics=(ps:LobbyProject[])=>ps.filter(p=>p.topics.length);

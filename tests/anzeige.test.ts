@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {recency,datumsteil,suchtext,kartenDatum,datum,nurTag,anzeigeStatus,berlinTag,themenReihenfolge} from '../src/ui/format';
+import {recency,datumsteil,suchtext,kartenDatum,datum,nurTag,anzeigeStatus,berlinTag,themenReihenfolge,quellenStand} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
  url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
@@ -443,4 +443,20 @@ test('Der Quellenfilter bietet nur Dokumentquellen an, Typen stehen in deutscher
  assert.ok(seite.includes("data.sources.filter(s=>s.kind!=='lobby').map(s=><option"),'das Lobbyregister liefert keine Dokumente');
  assert.ok(seite.includes(".sort((a,b)=>a.localeCompare(b,'de'))"),'„Änderungsantrag“ steht nicht hinter „Verordnung“');
  assert.deepEqual(['Verordnung','Änderungsantrag','Antrag'].sort((a,b)=>a.localeCompare(b,'de')),['Änderungsantrag','Antrag','Verordnung']);
+});
+
+// Ein Abruf mit Warnung speichert "partial". Die Quellenkarte kannte den Wert nicht und schrieb "Offen" - das die Seite
+// als "wird noch nicht automatisch überwacht" erklärt. Nach einem Fehler nannte sie Zeitpunkt und Anzahl des letzten
+// erfolgreichen Abrufs unbeschriftet bzw. "beim letzten Abruf".
+test('Quellenkarten benennen Teilabrufe und Fehler richtig',()=>{
+ assert.deepEqual(quellenStand({status:'partial'}),{label:'Teilweise abgerufen',klasse:'warning',vorsatz:'',abruf:'beim letzten Abruf'});
+ assert.deepEqual(quellenStand({status:'error'}),{label:'Abruf fehlgeschlagen',klasse:'failure',vorsatz:'Zuletzt erfolgreich: ',abruf:'beim letzten erfolgreichen Abruf'});
+ assert.equal(quellenStand({status:'ok'}).label,'Abruf erfolgreich');
+ assert.equal(quellenStand({status:'manual'}).label,'Offen','nur nicht angebundene Quellen heißen offen');
+ for(const status of ['ok','partial','error','pending','setup'])assert.notEqual(quellenStand({status}).label,'Offen',status);
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes("<span className={'badge '+quellenStand(s).klasse}>{quellenStand(s).label}</span>"),'das Abzeichen');
+ assert.ok(seite.includes('${quellenStand(s).vorsatz}${date(s.checkedAt,true)}'),'der Zeitpunkt');
+ assert.ok(seite.includes('${s.count} ${quellenStand(s).abruf}'),'die Anzahl');
+ assert.match(readFileSync('src/ui/style.css','utf8'),/\.badge\.warning\{/,'das Warnabzeichen hat eine Gestaltung');
 });
