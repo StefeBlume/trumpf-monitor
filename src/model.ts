@@ -43,7 +43,7 @@ export interface DocumentInput {
  updatedAt:string|null;        // Zeitpunkt der letzten Bewegung laut Quelle; treibt die Sortierung
  documentType:string;          // Drucksachentyp, z. B. Gesetzentwurf, Unterrichtung, Beschlussempfehlung
  step:string|null;             // Verfahrensschritt, z. B. Gesetzentwurf, 1. Beratung, Beschlussempfehlung und Bericht
- procedure:string|null;        // Beratungsstand laut DIP
+ procedure:string|null;        // Vorgangstyp laut DIP, z. B. Gesetzgebung oder EU-Vorlage
  documentNumber:string|null;   // Drucksachennummer; bei Plenarprotokollen leer - deren Sitzungsnummer benennt kein Papier
  paperKey?:string|null;        // Identitaet des Papiers, z. B. "BT-Drucksache 21/7984"; nur Drucksachen werden zusammengefuehrt
  pdfUrl:string|null;           // amtliches PDF

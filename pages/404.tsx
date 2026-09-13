@@ -12,7 +12,8 @@ export default function NichtGefunden(){
    <h1 style={{fontSize:'32px',letterSpacing:'-1px',lineHeight:1.2,margin:'0 0 12px'}}>Diese Seite gibt es nicht.</h1>
    <p style={{fontSize:'15px',lineHeight:1.6,color:'#53617b',margin:'0 0 24px'}}>
     Die Adresse führt ins Leere. Das Lagebild mit den aktuellen Thementreffern erreichst du über den Weg zurück.</p>
-   <a href="." style={{display:'inline-block',background:'#173fe2',color:'#fff',textDecoration:'none',
+   {/* Nicht relativ: auf ".../trumpf-monitor/gibt/es/nicht" fuehrte "." nach ".../gibt/es/" - wieder ins Leere. */}
+   <a href={`${process.env.NEXT_PUBLIC_BASE_PATH??''}/`} style={{display:'inline-block',background:'#173fe2',color:'#fff',textDecoration:'none',
     borderRadius:'8px',padding:'12px 18px',fontSize:'14px',fontWeight:600}}>Zum Lagebild</a>
   </div>
  </main></>;

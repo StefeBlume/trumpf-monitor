@@ -85,8 +85,10 @@ test('Die Fehlerseite ist deutsch und führt zurück',()=>{
  const quelle=readFileSync('pages/404.tsx','utf8');
  assert.ok(quelle.includes('Diese Seite gibt es nicht'));
  assert.ok(quelle.includes('Zum Lagebild'),'ein Weg zurück muss da sein');
- // Relativ, damit der Link auch unter einem Unterpfad wie /trumpf-monitor/ stimmt.
- assert.ok(quelle.includes('href="."'),'ein absoluter Pfad würde unter dem Unterpfad ins Leere führen');
+ // Über den Basispfad des Builds, nicht relativ: "." führte auf ".../trumpf-monitor/gibt/es/nicht" nach
+ // ".../gibt/es/" und damit wieder auf die Fehlerseite. Ein fest verdrahtetes "/" läge neben dem Unterpfad.
+ assert.ok(quelle.includes("href={`${process.env.NEXT_PUBLIC_BASE_PATH??''}/`}"),'der Weg zurück muss aus jeder Tiefe zum Lagebild führen');
+ assert.ok(!quelle.includes('href="/"'),'kein Pfad, der den Unterpfad übergeht');
  assert.ok(!/This page could not be found/.test(quelle));
  // Eigene Gestaltung, damit die Seite auch ohne das ausgelagerte Stylesheet lesbar bleibt.
  assert.ok(quelle.includes('fontFamily'),'die Seite trägt ihre Gestaltung selbst');
@@ -321,4 +323,16 @@ test('Die Oberfläche lädt keinen Server-Code',()=>{
  }
  // topics.ts selbst darf nichts vom Server nachladen.
  assert.ok(!/^import\s+(?!type)/m.test(readFileSync('src/server/topics.ts','utf8')),'topics.ts bleibt ohne Laufzeit-Importe');
+});
+
+// Auf ".../trumpf-monitor/gibt/es/nicht" führte "Zum Lagebild" nach ".../gibt/es/" - wieder auf die Fehlerseite.
+// Und die Dokumentansicht nannte Themen als Grund des Erscheinens, auch bei Ausschusspositionen, und schrieb
+// bei Plenarprotokollen "Nicht in der Quelle angegeben", obwohl die Quelle eine Sitzungsnummer nennt.
+test('Fehlerseite und Dokumentansicht behaupten nichts Falsches',()=>{
+ const fehler=readFileSync('pages/404.tsx','utf8');
+ assert.ok(!fehler.includes('href="."'),'kein relativer Link aus einer beliebig tiefen Fehleradresse');
+ assert.ok(fehler.includes("href={`${process.env.NEXT_PUBLIC_BASE_PATH??''}/`}"),'der Link führt über den Basispfad zum Lagebild');
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(!seite.includes('Warum dieses Dokument erscheint'),'Ausschusspositionen erscheinen wegen der Überweisung');
+ assert.ok(seite.includes("selected.documentType==='Plenarprotokoll'?'Keine – die Fundstelle ist ein Plenarprotokoll'"));
 });
