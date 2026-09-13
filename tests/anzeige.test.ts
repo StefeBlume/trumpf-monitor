@@ -236,7 +236,7 @@ test('Termine heißen Termine, nicht Veröffentlichungen',()=>{
  const seite=readFileSync('pages/index.tsx','utf8');
  assert.ok(seite.includes("[istTermin(selected)?'Termin':'Veröffentlicht',date(selected.publishedAt)]"),'die Dokumentansicht unterscheidet');
  assert.equal((seite.match(/\{istTermin\(item\)\?'Sitzung am':'Dokument vom'\}/g)??[]).length,2,'beide Kartenformen unterscheiden');
- assert.ok(seite.includes('&&istTermin(i);'),'"Als Nächstes" nutzt dieselbe Bestimmung');
+ assert.ok(seite.includes('const isUpcoming=(i:Item)=>kommenderTermin(i,today());'),'"Als Nächstes", Gremienkarte und Listen nutzen dieselbe Bestimmung');
 });
 
 // Mit einem Parameter in der Adresse entfernt Next.js nach dem Start den Schraegstrich. Der Stand wurde

@@ -17,7 +17,7 @@ const date=(s:string|null|undefined,full=false)=>datum(s,full);
 // morgens noch der Vortag, und ein Termin von gestern stuende weiter unter "Als Nächstes".
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Berlin'}).format(new Date());
 // Bei Terminen ist publishedAt der Sitzungstag, nicht der Tag einer Veroeffentlichung.
-const isUpcoming=(i:Item)=>!!i.publishedAt&&i.publishedAt.slice(0,10)>=today()&&istTermin(i);
+const isUpcoming=(i:Item)=>kommenderTermin(i,today());
 const nurMitberatend=(i:Item)=>(i.nurMitberatend??[]).filter(c=>!i.committees.includes(c)).map(c=>committeeById(c)?.name).filter((n):n is string=>!!n);
 // Altbestand aus einem Stand vor der Themensuche traegt das Feld noch nicht.
 const topicsOf=(i:Item):TopicMatch[]=>i.topics??[];
