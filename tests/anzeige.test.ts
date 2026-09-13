@@ -352,3 +352,13 @@ test('Neu und Geändert gelten 24 Stunden nach der letzten echten Änderung',()=
  assert.ok(!seite.includes('labels[item.change]')&&!seite.includes('labels[selected.change]'),'Karte und Dokumentansicht nutzen die Anzeige');
  assert.ok(seite.includes('labels[e.change]'),'das Änderungslog bleibt ein Laufprotokoll');
 });
+
+// "Als Nächstes" zählte in der Überschrift alle kommenden Termine, zeigte aber fest die ersten sechs - ohne
+// Hinweis und ohne Weg zu den übrigen. Beim siebten Termin hätte "7" dagestanden und eine Anhörung gefehlt.
+test('Als Nächstes zeigt jeden gezählten Termin oder einen Weg dorthin',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(!seite.includes('{upcoming.slice(0,6).map('),'keine feste Kürzung ohne Knopf');
+ assert.ok(seite.includes('(alleTermine?upcoming:upcoming.slice(0,6)).map('),'gekürzt nur, solange nicht alle gewünscht sind');
+ assert.ok(seite.includes('{upcoming.length>6&&<button'),'ab dem siebten Termin erscheint der Knopf');
+ assert.ok(seite.includes('`Alle ${upcoming.length} Termine zeigen`'),'der Knopf nennt dieselbe Zahl wie die Überschrift');
+});
