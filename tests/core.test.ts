@@ -350,6 +350,23 @@ test('Beim nachträglichen Zusammenführen bleiben nur mitberatende Ausschüsse 
  assert.deepEqual(items[0].nurMitberatend,['eu','ha'],'die Angabe der entfernten Dublette geht nicht verloren');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
+// "RSS-Meldung" wurde zu "Behördenmeldung". Der Dokumenttyp steckt im Hash: ohne Umbenennung beim Lesen galt jede
+// gespeicherte Feedmeldung bei ihrer nächsten Lieferung als geändert, mit neuer Version und Eintrag im Änderungslog.
+test('Die Umbenennung der Feedmeldungen erzeugt keine Scheinänderung',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-typ-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const feed:Source={id:'bafa-test',name:'B',institution:'BAFA',url:'https://www.bafa.de/',kind:'rss',note:'Fixture'};
+ const heute=new Date().toISOString();
+ const meldung={...doc,externalId:'m1',documentNumber:null,committees:[],lead:null,originator:null,publishedAt:heute,updatedAt:heute,
+  topics:[{topic:'dualuse',terms:['ausfuhr'],count:1,inTitle:true,snippet:'Ausfuhr'}]};
+ try{
+ await runMonitor({sources:[feed],fetcher:async()=>[{...meldung,documentType:'RSS-Meldung'}]});
+ const zweiter=await runMonitor({sources:[feed],fetcher:async()=>[{...meldung,documentType:'Behördenmeldung'}]});
+ assert.equal(zweiter?.items.length,0,'dieselbe Meldung ist nicht geändert');
+ const i=(await dashboard()).items[0];
+ assert.equal(i.documentType,'Behördenmeldung');
+ assert.equal(i.version,1);
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
 // Ein Stand aus einer frueheren Fassung traegt neuere Felder nicht. In CI kam die Datenbank aus dem
 // Zwischenspeicher und der Lauf brach beim Sortieren an einem fehlenden topics-Feld ab.
 test('Stände aus einer früheren Fassung lassen den Lauf nicht abbrechen',async()=>{

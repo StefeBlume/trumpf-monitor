@@ -51,6 +51,9 @@ export function asItem(raw:unknown):Item{
   // Gespeicherte Tagesordnungen trugen den Veroeffentlichungstag als Termin. Ohne Reparatur beim Lesen
   // galten sie beim naechsten Abruf als geaendert, obwohl sich an der Quelle nichts bewegt hatte.
   publishedAt:(i.documentType==='Tagesordnung'?sitzungstag(i.title??''):null)??i.publishedAt??null,
+  // Feedmeldungen hiessen frueher "RSS-Meldung". Der Typ steckt im Hash; ohne Umbenennung beim Lesen galt jede
+  // gespeicherte Meldung bei ihrer naechsten Lieferung als "Behördenmeldung" als geaendert.
+  documentType:i.documentType==='RSS-Meldung'?'Behördenmeldung':(i.documentType??''),
   archived:i.archived===true};
 }
 // Briefings tragen ganze Dokumente mit. Zwoelf Briefings mit je zwoelf Eintraegen genuegen fuer den
