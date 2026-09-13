@@ -691,7 +691,7 @@ test('Jede Änderung des Themenrasters holt das Fenster neu',()=>{
  assert.notEqual(erfassungsstand(mit('halbleiter',t=>({...t,terms:[...t.terms,'extra']}))),ERFASSUNGSSTAND,'ein neuer Begriff');
  assert.notEqual(erfassungsstand(mit('dualuse',t=>({...t,ignore:[/anders/gi]}))),ERFASSUNGSSTAND,'eine geänderte Ausnahme');
  assert.notEqual(erfassungsstand(mit('ki',t=>({...t,context:{...t.context,naehe:undefined}}))),ERFASSUNGSSTAND,'eine geänderte Kontextregel');
- assert.notEqual(erfassungsstand(TOPICS,8),ERFASSUNGSSTAND,'eine neue Zuordnungslogik');
+ assert.notEqual(erfassungsstand(TOPICS,9),ERFASSUNGSSTAND,'eine neue Zuordnungslogik');
  assert.equal(erfassungsstand(TOPICS),ERFASSUNGSSTAND,'dasselbe Raster ergibt denselben Stand');
 });
 

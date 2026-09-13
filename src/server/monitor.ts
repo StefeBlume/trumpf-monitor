@@ -33,7 +33,8 @@ function sammelpapiere(items:Pick<DocumentInput,'paperKey'|'url'>[]):Set<string>
 // Dokumente mit veralteten Treffern hinterlassen haben.
 // Logik 7: Ueberweisungen vermerken nur mitberatende Querschnittsausschuesse. Der volle Abruf traegt das Feld
 // im ganzen Bestand nach; sonst fehlte der Hinweis bei allem, was sich an der Quelle nicht mehr bewegt.
-export function erfassungsstand(topics:unknown,logik=7):string{
+// Logik 8: Belege werden an Wortgrenzen geschnitten. Sie entstehen beim Eingang und stehen nicht im Hash.
+export function erfassungsstand(topics:unknown,logik=8):string{
  return `${logik}:${rasterFingerabdruck(topics)}`;
 }
 export const ERFASSUNGSSTAND=erfassungsstand(TOPICS);

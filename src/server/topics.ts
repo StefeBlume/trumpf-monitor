@@ -96,9 +96,13 @@ function kontextImSatz(text:string,at:number,len:number,topic:string):boolean{
  return CONTEXT.get(topic)!.some(re=>{re.lastIndex=0;return re.test(satz);});
 }
 export const topicById=(id:string)=>TOPICS.find(t=>t.id===id);
-function snippetAt(text:string,at:number,len:number):string{
- const from=Math.max(0,at-75), to=Math.min(text.length,at+len+75);
- return (from>0?'… ':'')+text.slice(from,to).replace(/\s+/g,' ').trim()+(to<text.length?' …':'');
+// Geschnitten wird an Wortgrenzen: live begannen 111 von 141 Belegen mitten im Wort ("… oeter, Martina Uhr"), 5 endeten
+// so. Ein Beleg aus dem Fliesstext beginnt ausserdem nicht in der Ueberschrift - die steht in der App ohnehin darueber.
+function snippetAt(text:string,at:number,len:number,untergrenze=0):string{
+ let from=Math.max(untergrenze,at-75), to=Math.min(text.length,at+len+75);
+ if(from>untergrenze&&!/\s/.test(text[from-1])){const ws=text.slice(from,at).search(/\s/);if(ws>=0)from+=ws+1;}
+ if(to<text.length&&!/\s/.test(text[to])){const ws=text.slice(at+len,to).search(/\s\S*$/);if(ws>=0)to=at+len+ws;}
+ return (from>untergrenze?'… ':'')+text.slice(from,to).replace(/\s+/g,' ').trim()+(to<text.length?' …':'');
 }
 // Zaehlt je Thema die Fundstellen und merkt sich, ob der Begriff schon im Titel steht. Beides sind
 // Tatsachen, keine Bewertung: ein einmal gestreiftes Stichwort bleibt unterscheidbar von einem
@@ -141,7 +145,7 @@ export function scanTopics(title:string,body=''):TopicMatch[]{
   const eintrag=byTopic.get(c.topic)??{terms:new Set<string>(),count:0,inTitle:false,snippet:'',ausText:false};
   eintrag.terms.add(c.term); eintrag.count+=n;
   if(first<title.length)eintrag.inTitle=true;
-  if(imText>=0&&!eintrag.ausText){eintrag.snippet=snippetAt(text,imText,imTextLen);eintrag.ausText=true;}
+  if(imText>=0&&!eintrag.ausText){eintrag.snippet=snippetAt(text,imText,imTextLen,title.length+1);eintrag.ausText=true;}
   else if(!eintrag.snippet)eintrag.snippet=snippetAt(text,first,firstLen);
   byTopic.set(c.topic,eintrag);
  }

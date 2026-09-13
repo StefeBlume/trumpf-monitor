@@ -166,3 +166,25 @@ test('Der EU-Vertrag ist keine EUV-Lithografie',()=>{
  assert.equal(hl('Die EUV-Belichtung ist Voraussetzung der modernsten Chips.'),true,'EUV mit Halbleiterbezug bleibt ein Treffer');
  assert.equal(hl('TRUMPF liefert Laserverstärker für EUV-Anlagen.'),true);
 });
+
+// Live begannen 111 von 141 Belegen mitten im Wort ("… oeter, Martina Uhr, Jörg Zirwes"), 5 endeten mitten im Wort.
+// Und lag der Begriff kurz hinter der Überschrift, stand deren Ende mit im Beleg.
+test('Belege beginnen und enden an Wortgrenzen und wiederholen die Überschrift nicht',()=>{
+ const titel='Hochtechnologie-Agenda wirksam machen';
+ const text='Antrag der Abgeordneten Maximilian Mustermann, Erika Beispielhaft, Martina Uhr, Jörg Zirwes, Ulrich von Zons und der Fraktion. '
+  +'Der Bundestag stellt fest: Die Halbleiterfertigung in Deutschland braucht verlässliche Rahmenbedingungen, damit Investitionen in Dresden '
+  +'und Magdeburg nicht abwandern und die Wertschöpfung im Land bleibt.';
+ const h=scanTopics(titel,text).find(m=>m.topic==='halbleiter');
+ assert.ok(h,'Treffer erwartet');
+ const kern=h!.snippet.replace(/^… /,'').replace(/ …$/,'');
+ const start=text.indexOf(kern);
+ assert.ok(start>=0,`zusammenhängender Ausschnitt des Fließtexts: ${h!.snippet}`);
+ assert.ok(start===0||/\s/.test(text[start-1]),`beginnt mitten im Wort: ${h!.snippet}`);
+ const ende=start+kern.length;
+ assert.ok(ende===text.length||/\s/.test(text[ende]),`endet mitten im Wort: ${h!.snippet}`);
+ assert.ok(h!.snippet.includes('Halbleiterfertigung'));
+ const kurz=scanTopics('Antrag zur Chipfertigung','Halbleiter sind für die Industrie wichtig.').find(m=>m.topic==='halbleiter');
+ assert.ok(kurz,'Treffer im kurzen Text');
+ assert.ok(!kurz!.snippet.includes('Antrag zur'),`die Überschrift steht nicht im Beleg: ${kurz!.snippet}`);
+ assert.ok(!kurz!.snippet.startsWith('…'),'am Anfang des Fließtexts fehlt davor nichts');
+});
