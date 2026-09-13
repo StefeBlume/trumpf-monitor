@@ -8,8 +8,10 @@
 // seinen Satzzusammenhang und überlässt die Einschätzung der Leserin.
 export interface Topic {id:string; label:string; why:string; terms:string[]; strict?:string[]; context?:{terms:string[]; with:string[]; naehe?:'satz'}; ignore?:RegExp[];}
 // context: Begriffe, die fuer sich genommen zu breit sind. Sie zaehlen nur, wenn im selben Dokument
-// auch ein Begriff aus "with" vorkommt. "Kuenstliche Intelligenz" trifft sonst KI-generierte Musik,
-// "Buerokratieabbau" das Vereinssteuerrecht. Beide Fundstellen werden als Beleg angezeigt.
+// auch ein Begriff aus "with" vorkommt. "Kuenstliche Intelligenz" trifft sonst KI-generierte Musik. In langen Texten
+// steht fast immer irgendein Bezugswort: Das Vereinssteuerrecht (BR-Drs. 517/26) trifft "Buerokratieabbau" trotz der Regel,
+// ueber "wirtschaftspolitische" und "Unternehmen". Die Satzregel naehme dort alle 8 reinen Buerokratie-Volltexttreffer weg,
+// auch die regionale Wirtschaftsfoerderung - sie bleibt deshalb KI und EUV vorbehalten.
 // Jeder Gesetzentwurf muss die Kosten fuer die Wirtschaft darstellen und dabei mittelstaendische
 // Unternehmen nennen: "Weitere Kosten ... Der Wirtschaft, einschliesslich mittelstaendischer Unternehmen,
 // entstehen keine". Gezaehlt als Mittelstand-Fundstelle machte der Pflichtsatz 4 von 16 Treffern aus -
