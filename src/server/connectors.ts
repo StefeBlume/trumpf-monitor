@@ -138,13 +138,26 @@ export async function agendaDocuments():Promise<DocumentInput[]>{
 }
 // Anhoerungen und oeffentliche Sitzungen je ausgewaehltem Ausschuss. Eine leere Liste ist ein Fehler:
 // bricht das CMS die Struktur, faellt das auf, statt still nichts zu liefern.
+// Die Terminlisten liefern hoechstens 10 Eintraege je Abruf - auch limit=50 ergibt 10 -, neueste und angekuendigte zuerst.
+// Am 13.09. belegte der Rechtsausschuss 5 der 10 Plaetze mit kuenftigen Anhoerungen; ab elf Terminen im Zeitraum waeren
+// die uebrigen still weggefallen. Weitergeblaettert wird, solange eine volle Seite bis zuletzt Termine der letzten 30 Tage fuehrt.
+export const TERMINSEITE=10, TERMINSEITEN_MAX=5;
+export async function blaettern<T extends {url:string;date:string|null}>(seite:(offset:number)=>Promise<T[]>,grenze=new Date(Date.now()-30*86400000).toISOString().slice(0,10)):Promise<T[]>{
+ const je=new Map<string,T>();
+ for(let n=0;n<TERMINSEITEN_MAX;n++){
+  const rows=await seite(n*TERMINSEITE);
+  for(const r of rows)if(!je.has(r.url))je.set(r.url,r);
+  const letzte=rows.at(-1)?.date;
+  if(rows.length<TERMINSEITE||!letzte||letzte.slice(0,10)<grenze)break;
+ }
+ return [...je.values()];
+}
 export async function eventDocuments(warn?:(note:string)=>void):Promise<DocumentInput[]>{
  const withEvents=COMMITTEES.filter(c=>c.events);
  const docs:DocumentInput[]=[];const failed:string[]=[];
  for(const c of withEvents){
- const url=`${FILTERLIST}${c.events}?offset=0&limit=10&noFilterSet=true`;
  try{
- const rows=parseCommitteeEvents(await fetchOfficial(url),url);
+ const rows=await blaettern(offset=>{const url=`${FILTERLIST}${c.events}?offset=${offset}&limit=${TERMINSEITE}&noFilterSet=true`;return fetchOfficial(url).then(html=>parseCommitteeEvents(html,url));});
  if(!rows.length)throw new Error('keine Einträge im erwarteten Format');
  for(const row of rows)docs.push({externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:row.date,updatedAt:row.date,topics:scanTopics(row.title),
  documentType:'Ausschusstermin',step:'Anhörung oder Sitzung',procedure:null,documentNumber:null,pdfUrl:null,

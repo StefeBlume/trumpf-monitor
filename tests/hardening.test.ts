@@ -242,6 +242,34 @@ test('BMF-Einträge übernehmen nur, was die Adresse sagt',()=>{
  for(const x of d){assert.equal(x.step,null);assert.ok(!/Referentenentwurf|Gesetzesvorhaben/.test(x.title+x.documentType),x.title);}
 });
 
+import {blaettern,TERMINSEITE} from '../src/server/connectors';
+
+// Die Terminlisten liefern 10 Einträge je Abruf, neueste zuerst. Am 13.09. belegte der Rechtsausschuss 5 der 10 Plätze mit
+// künftigen Anhörungen; die App fragte nie eine zweite Seite ab.
+test('Terminlisten werden geblättert, solange die Seite noch Termine im Zeitraum führt',async()=>{
+ const termin=(n:number,tag:string)=>({url:`https://www.bundestag.de/t/${n}`,title:`Anhörung ${n}`,date:`${tag}T00:00:00.000Z`});
+ const listen:Record<number,ReturnType<typeof termin>[]>={
+  0:Array.from({length:10},(_,i)=>termin(i,'2026-10-'+String(20-i).padStart(2,'0'))),
+  10:[termin(10,'2026-09-30'),termin(11,'2026-09-20'),termin(12,'2026-05-01')],
+  20:[termin(20,'2026-04-01')]
+ };
+ const gefragt:number[]=[];
+ const seite=async(offset:number)=>{gefragt.push(offset);return listen[offset]??[];};
+ const alle=await blaettern(seite,'2026-08-14');
+ assert.equal(TERMINSEITE,10);
+ assert.deepEqual(gefragt,[0,10],'Seite 2 ist voll im Zeitraum abgerufen, Seite 3 nicht mehr nötig');
+ assert.equal(alle.length,13,'die Termine jenseits der ersten zehn fehlen nicht');
+ // Endet die erste Seite schon außerhalb des Zeitraums, bleibt es bei einem Abruf.
+ gefragt.length=0;
+ await blaettern(async o=>{gefragt.push(o);return o===0?Array.from({length:10},(_,i)=>termin(i,i<5?'2026-10-01':'2026-03-01')):[];},'2026-08-14');
+ assert.deepEqual(gefragt,[0]);
+ // Eine Liste, die nie endet, wird nach fünf Seiten abgebrochen, und doppelte Adressen zählen einmal.
+ gefragt.length=0;
+ const endlos=await blaettern(async o=>{gefragt.push(o);return Array.from({length:10},(_,i)=>termin(i,'2026-10-01'));},'2026-08-14');
+ assert.equal(gefragt.length,5);
+ assert.equal(endlos.length,10);
+});
+
 import {fetchTimeoutFor} from '../src/server/connectors';
 
 test('Das Zeitlimit wächst mit der erlaubten Antwortgröße',()=>{
