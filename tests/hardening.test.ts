@@ -173,6 +173,26 @@ test('Die Frist gilt auch für Briefings, Änderungslog und frühere Versionen',
  assert.equal(d.items.length,1,'das Dokument selbst liegt im Zeitraum und bleibt');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
+// Gespeicherte Plenarprotokoll-Beratungen trugen die Datenpflege des DIP als Bewegung. Die Aufbewahrung las das Rohdatum und
+// liess sie stehen; die Oberflaeche zeigte sie oben. Beide rechnen jetzt mit dem Datum der Debatte.
+test('Gespeicherte Plenarprotokoll-Beratungen verlieren das Pflegedatum und laufen ab',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-plenum-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const source:Source={id:'dip-committees',name:'T',institution:'T',url:base,kind:'committee-dip',note:'Fixture'};
+ try{
+ await runMonitor({sources:[source],fetcher:async()=>[doc({externalId:'debatte'}),doc({externalId:'vorlage'})],retentionDays:0});
+ const {db}=await import('../src/server/db');const c=await db();
+ const [a,b]=(await dashboard()).items;
+ const debatte=new Date(Date.now()-365*86400000).toISOString(),pflege=new Date().toISOString();
+ await c.batch([
+  {sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...a,documentType:'Plenarprotokoll',step:'Beratung',publishedAt:debatte,updatedAt:pflege}),a.id]},
+  {sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...b,documentType:'Unterrichtung',publishedAt:debatte,updatedAt:pflege}),b.id]}
+ ],'write');
+ const gelesen=(await dashboard()).items.find(i=>i.id===a.id)!;
+ assert.equal(gelesen.updatedAt,debatte,'die Oberfläche zeigt das Datum der Debatte');
+ assert.equal(await prune(10),1,'die Debatte von vor einem Jahr läuft ab');
+ assert.deepEqual((await dashboard()).items.map(i=>i.id),[b.id],'die spät überwiesene Drucksache bleibt');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
 // --- Teilausfall wird sichtbar -----------------------------------------------------------------
 test('Teilausfall einer Quelle erscheint im Status, nicht nur im Log',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'policy-partial-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');

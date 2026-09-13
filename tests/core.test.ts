@@ -45,6 +45,14 @@ test('Überweisung wird nur für ausgewählte Ausschüsse übernommen',()=>{
  assert.deepEqual(mapCommitteePosition({...position,ueberweisung:[{ausschuss_kuerzel:'Wi',federfuehrung:true}]})!.nurMitberatend,[]);
  assert.equal(mapCommitteePosition({...position,ueberweisung:[]}),null);
 });
+// Das DIP pflegte am 04.09.2026 Plenarprotokoll-Positionen: Beratungen vom 12.09.2025 standen mit diesem "aktualisiert" in der
+// Liste. Die App zeigte sie als Bewegung vom September 2026, sortierte sie nach oben und meldete sie als neu.
+test('Bei Plenarprotokoll-Beratungen zählt das Datum der Debatte, nicht die Datenpflege',()=>{
+ const beratung={...position,vorgangsposition:'Beratung',datum:'2025-09-12',aktualisiert:'2026-09-04T10:00:00+02:00',
+  fundstelle:{dokumentart:'Plenarprotokoll',herausgeber:'BT',dokumentnummer:'21/22',pdf_url:'https://dserver.bundestag.de/btp/21/21022.pdf'}};
+ assert.equal(mapCommitteePosition(beratung)!.updatedAt?.slice(0,10),'2025-09-12');
+ assert.equal(mapCommitteePosition(position)!.updatedAt?.slice(0,10),'2026-09-05','eine spätere Überweisung einer Bundesratsvorlage bleibt eine Bewegung');
+});
 test('Fremde PDF-Adressen werden nicht als amtliche Quelle ausgegeben',()=>{
  assert.equal(mapCommitteePosition({...position,fundstelle:{...position.fundstelle,pdf_url:'https://attacker.example/x.pdf'}})!.pdfUrl,null);
 });

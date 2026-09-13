@@ -49,7 +49,8 @@ export function asItem(raw:unknown):Item{
   topics:Array.isArray(i.topics)?i.topics:[],
   committees:Array.isArray(i.committees)?i.committees:[],
   ministries:Array.isArray(i.ministries)?i.ministries:[],
-  updatedAt:i.updatedAt??null,
+  // Gespeicherte Plenarprotokoll-Beratungen trugen die Datenpflege des DIP als Bewegung (siehe beratungImPlenum).
+  updatedAt:i.sourceId==='dip-committees'&&i.documentType==='Plenarprotokoll'&&i.publishedAt?i.publishedAt:(i.updatedAt??null),
   // Gespeicherte Tagesordnungen trugen den Veroeffentlichungstag als Termin. Ohne Reparatur beim Lesen
   // galten sie beim naechsten Abruf als geaendert, obwohl sich an der Quelle nichts bewegt hatte.
   publishedAt:(i.documentType==='Tagesordnung'?sitzungstag(i.title??''):null)??i.publishedAt??null,
@@ -270,15 +271,17 @@ export async function prune(days:number,gueltigeQuellen?:string[]):Promise<numbe
   // Fruehere Versionen fallen weg, der aktuelle Stand eines vorhandenen Dokuments nicht.
   {sql:"DELETE FROM versions WHERE json_extract(data,'$.changedAt')<? AND NOT EXISTS (SELECT 1 FROM items WHERE items.id=versions.item_id AND json_extract(items.data,'$.version')=versions.version)",args:[cutoff]}
  ],'write');
- const stale=await c.execute({sql:`SELECT id,source_id,json_extract(data,'$.externalId') ext,json_extract(data,'$.publishedAt') pub,json_extract(data,'$.updatedAt') upd FROM items WHERE
-  COALESCE(json_extract(data,'$.updatedAt'),json_extract(data,'$.publishedAt'),json_extract(data,'$.firstSeen'))<?`,args:[cutoff]});
- const ids=stale.rows.map(r=>String(r.id));
+ // Gemessen wird wie in der Oberflaeche, samt der Berichtigungen beim Lesen. Mit dem gespeicherten Rohdatum blieben
+ // Plenarprotokoll-Beratungen von 2025 bis zehn Tage nach der Datenpflege des DIP stehen.
+ const stale=(await c.execute('SELECT data FROM items')).rows.map(r=>asItem(JSON.parse(String(r.data))))
+  .filter(i=>(i.updatedAt??i.publishedAt??i.firstSeen)<cutoff);
+ const ids=stale.map(i=>i.id);
  if(!ids.length)return 0;
  const list=ids.map(()=>'?').join(',');
  // Meldungen ohne Datum laufen nach dem Erstkontakt ab. Ihr Feed liefert sie weiter; gemerkt wird
  // deshalb, dass sie schon einmal da waren.
- const ohneDatum=stale.rows.filter(r=>r.pub==null&&r.upd==null&&r.ext!=null)
-  .map(r=>({sql:'INSERT OR IGNORE INTO entfernt(source_id,external_id,at) VALUES(?,?,?)',args:[String(r.source_id),String(r.ext),new Date().toISOString()]}));
+ const ohneDatum=stale.filter(i=>i.publishedAt==null&&i.updatedAt==null&&i.externalId!=null)
+  .map(i=>({sql:'INSERT OR IGNORE INTO entfernt(source_id,external_id,at) VALUES(?,?,?)',args:[String(i.sourceId),String(i.externalId),new Date().toISOString()]}));
  await c.batch([
  ...ohneDatum,
  {sql:`DELETE FROM versions WHERE item_id IN (${list})`,args:ids},

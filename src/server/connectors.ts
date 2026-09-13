@@ -67,6 +67,11 @@ export function papierschluessel(herausgeber:unknown,dokumentart:unknown,nummer:
  return dokumentart==='Drucksache'&&(herausgeber==='BT'||herausgeber==='BR')&&typeof nummer==='string'&&nummer.trim()
   ?`${herausgeber}-Drucksache ${clean(nummer)}`:null;
 }
+// Das DIP pflegt Plenarprotokoll-Positionen nachtraeglich: am 04.09.2026 standen Beratungen vom 12.09.2025, 04.12.2025 und
+// 29.01.2026 mit diesem "aktualisiert" in der Liste, obwohl ihre Vorgaenge zuletzt im Januar 2026 bewegt wurden. Die App zeigte
+// sie als Bewegung vom September, sortierte sie nach oben und meldete sie als neu. Ueberwiesen wird in der Debatte selbst -
+// ihr Datum ist die Bewegung. Bei Drucksachen bleibt es bei "aktualisiert": der Bundesrat ueberweist Vorlagen oft Wochen spaeter.
+export const beratungImPlenum=(fundstelle:any)=>fundstelle?.dokumentart==='Plenarprotokoll';
 export function mapCommitteePosition(d:any):DocumentInput|null{
  const ueberwiesen=(Array.isArray(d?.ueberweisung)?d.ueberweisung as any[]:[]).flatMap((u:any)=>{const c=committeeByKuerzel(String(u?.ausschuss_kuerzel??''));return c?[{c,lead:u?.federfuehrung===true}]:[];});
  const referrals:{id:string;lead:boolean}[]=ueberwiesen.filter(r=>r.lead||!r.c.leadOnly).map(r=>({id:r.c.id,lead:r.lead}));
@@ -76,7 +81,7 @@ export function mapCommitteePosition(d:any):DocumentInput|null{
  if(!referrals.length||!d?.id||!d?.titel)return null;
  const f=d.fundstelle??{};
  return {externalId:String(d.id),title:clean(d.titel),url:d.vorgang_id?dipUrl('vorgang',d.vorgang_id,clean(d.titel)):f.id?dipUrl('drucksache',f.id,clean(d.titel)):`https://dip.bundestag.de/suche?f.id=${encodeURIComponent(String(d.id))}`,
- text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(f.drucksachetyp??d.dokumentart??'Vorgangsposition'),step:d.vorgangsposition?clean(d.vorgangsposition):null,
+ text:'',publishedAt:iso(d.datum),updatedAt:beratungImPlenum(f)?(iso(d.datum)??iso(d.aktualisiert)):iso(d.aktualisiert),documentType:clean(f.drucksachetyp??d.dokumentart??'Vorgangsposition'),step:d.vorgangsposition?clean(d.vorgangsposition):null,
  procedure:d.vorgangstyp?clean(d.vorgangstyp):null,documentNumber:f.dokumentnummer&&f.dokumentart!=='Plenarprotokoll'?clean(f.dokumentnummer):null,paperKey:papierschluessel(f.herausgeber,f.dokumentart,f.dokumentnummer),pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
  committees:[...new Set(referrals.map(r=>r.id))],lead:referrals.find(r=>r.lead)?.id??null,nurMitberatend,ministries:[],topics:scanTopics(clean(d.titel)),
  originator:(Array.isArray(f.urheber)?f.urheber:[]).map((u:unknown)=>clean(u)).join(', ')||null};
