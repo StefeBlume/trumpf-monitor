@@ -302,7 +302,19 @@ test('npm run dev erkennt eine bereits laufende App',async()=>{
  const paket=JSON.parse(readFileSync('package.json','utf8'));
  assert.equal(paket.scripts.dev,'node scripts/dev.mjs','der Start läuft über die Portprüfung');
  const skript=readFileSync('scripts/dev.mjs','utf8');
- assert.match(skript,/EADDRINUSE/,'ein belegter Port wird erkannt');
+ assert.match(skript,/net\.connect\(PORT, HOST\)/,'ein laufender Server wird per Verbindung erkannt, auch wenn er auf allen Adressen lauscht');
  assert.match(skript,/Die App läuft bereits: http:\/\/localhost:\$\{PORT\}/,'und die Adresse genannt');
- assert.match(skript,/'--port', String\(PORT\)/,'gestartet wird auf demselben Port');
+ assert.match(skript,/'--hostname', HOST, '--port', String\(PORT\)/,'gestartet wird auf demselben Port');
+});
+
+// Auf 0.0.0.0 war die lokale Fassung im ganzen WLAN erreichbar: http://192.168.178.135:4180/connection.json
+// lieferte mit HTTP 200 den Verbindungsschluessel, mit dem sich Quellenlaeufe ausloesen und Dokumente archivieren liessen.
+test('Die lokale Fassung ist nur auf diesem Mac erreichbar',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const skript=readFileSync('scripts/dev.mjs','utf8');
+ assert.match(skript,/const HOST = '127\.0\.0\.1';/);
+ assert.ok(!skript.includes("'0.0.0.0'"),'npm run dev lauscht nicht im Netzwerk');
+ const paket=JSON.parse(readFileSync('package.json','utf8'));
+ assert.match(paket.scripts.start,/--hostname 127\.0\.0\.1 /,'npm start ebenso');
+ assert.ok(!JSON.stringify(paket.scripts).includes('0.0.0.0'));
 });
