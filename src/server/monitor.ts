@@ -31,7 +31,9 @@ function sammelpapiere(items:Pick<DocumentInput,'paperKey'|'url'>[]):Set<string>
 // Rasters; die Zahl davor bleibt fuer Aenderungen der Zuordnung ausserhalb der Themen.
 // Logik 6: Abgleich der DIP-Quellen. Ein voller Abruf raeumt dabei Eintraege ab, die frueher verworfene
 // Dokumente mit veralteten Treffern hinterlassen haben.
-export function erfassungsstand(topics:unknown,logik=6):string{
+// Logik 7: Ueberweisungen vermerken nur mitberatende Querschnittsausschuesse. Der volle Abruf traegt das Feld
+// im ganzen Bestand nach; sonst fehlte der Hinweis bei allem, was sich an der Quelle nicht mehr bewegt.
+export function erfassungsstand(topics:unknown,logik=7):string{
  return `${logik}:${rasterFingerabdruck(topics)}`;
 }
 export const ERFASSUNGSSTAND=erfassungsstand(TOPICS);
@@ -144,11 +146,12 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  for(const t of doc.topics)if(!themen.some(x=>x.topic===t.topic))themen.push(t);
  const gremien=[...new Set([...zwilling.committees,...doc.committees])];
  const ressorts=[...new Set([...zwilling.ministries,...doc.ministries])];
+ const mitberatend=[...new Set([...(zwilling.nurMitberatend??[]),...(doc.nurMitberatend??[])])];
  // Das juengere Datum gewinnt. Behielt der Zwilling sein altes, loeschte ihn die Aufbewahrung - und mit
  // ihm die frische Bewegung, die gerade eingearbeitet worden war.
  const zuletzt=neuer(zwilling.updatedAt,doc.updatedAt??doc.publishedAt);
- if(themen.length!==zwilling.topics.length||gremien.length!==zwilling.committees.length||ressorts.length!==zwilling.ministries.length||zuletzt!==zwilling.updatedAt){
- Object.assign(zwilling,{topics:themen,committees:gremien,ministries:ressorts,lead:zwilling.lead??doc.lead,updatedAt:zuletzt});
+ if(themen.length!==zwilling.topics.length||gremien.length!==zwilling.committees.length||ressorts.length!==zwilling.ministries.length||mitberatend.length!==(zwilling.nurMitberatend??[]).length||zuletzt!==zwilling.updatedAt){
+ Object.assign(zwilling,{topics:themen,committees:gremien,ministries:ressorts,nurMitberatend:mitberatend,lead:zwilling.lead??doc.lead,updatedAt:zuletzt});
  statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify(zwilling),zwilling.id]});
  }
  continue;
@@ -296,18 +299,20 @@ export async function deduplicate():Promise<number>{
   const themen=[...behalten.topics];
   const ressorts=new Set(behalten.ministries);
   const gremien=new Set(behalten.committees);
+  const mitberatend=new Set(behalten.nurMitberatend??[]);
   let zuletzt=behalten.updatedAt;
   for(const d of weg){
    for(const t of d.topics)if(!themen.some(x=>x.topic===t.topic))themen.push(t);
    for(const m of d.ministries)ressorts.add(m);
    for(const k of d.committees)gremien.add(k);
+   for(const k of d.nurMitberatend??[])mitberatend.add(k);
    zuletzt=neuer(zuletzt,d.updatedAt);
    statements.push({sql:'DELETE FROM versions WHERE item_id=?',args:[d.id]},
     {sql:"DELETE FROM events WHERE json_extract(data,'$.itemId')=?",args:[d.id]},
     {sql:'DELETE FROM items WHERE id=?',args:[d.id]});
    entfernt++;
   }
-  const vereint={...behalten,topics:themen,ministries:[...ressorts],committees:[...gremien],updatedAt:zuletzt};
+  const vereint={...behalten,topics:themen,ministries:[...ressorts],committees:[...gremien],nurMitberatend:[...mitberatend],updatedAt:zuletzt};
   statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify(vereint),behalten.id]});
  }
  if(statements.length)await c.batch(statements,'write');

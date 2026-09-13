@@ -68,13 +68,17 @@ export function papierschluessel(herausgeber:unknown,dokumentart:unknown,nummer:
   ?`${herausgeber}-Drucksache ${clean(nummer)}`:null;
 }
 export function mapCommitteePosition(d:any):DocumentInput|null{
- const referrals:{id:string;lead:boolean}[]=(Array.isArray(d?.ueberweisung)?d.ueberweisung as any[]:[]).flatMap((u:any)=>{const c=committeeByKuerzel(String(u?.ausschuss_kuerzel??''));const lead=u?.federfuehrung===true;return c&&(lead||!c.leadOnly)?[{id:c.id,lead}]:[];});
+ const ueberwiesen=(Array.isArray(d?.ueberweisung)?d.ueberweisung as any[]:[]).flatMap((u:any)=>{const c=committeeByKuerzel(String(u?.ausschuss_kuerzel??''));return c?[{c,lead:u?.federfuehrung===true}]:[];});
+ const referrals:{id:string;lead:boolean}[]=ueberwiesen.filter(r=>r.lead||!r.c.leadOnly).map(r=>({id:r.c.id,lead:r.lead}));
+ // Mitberatende Querschnittsausschuesse zaehlen nicht, werden aber vermerkt, damit die Dokumentansicht sie nennen kann.
+ // Ein pauschaler Hinweis hing am federfuehrenden Ausschuss und traf bei 30 von 53 Vorlagen nicht zu.
+ const nurMitberatend=[...new Set(ueberwiesen.filter(r=>!r.lead&&r.c.leadOnly).map(r=>r.c.id))].filter(id=>!referrals.some(r=>r.id===id));
  if(!referrals.length||!d?.id||!d?.titel)return null;
  const f=d.fundstelle??{};
  return {externalId:String(d.id),title:clean(d.titel),url:d.vorgang_id?dipUrl('vorgang',d.vorgang_id,clean(d.titel)):f.id?dipUrl('drucksache',f.id,clean(d.titel)):`https://dip.bundestag.de/suche?f.id=${encodeURIComponent(String(d.id))}`,
  text:'',publishedAt:iso(d.datum),updatedAt:iso(d.aktualisiert),documentType:clean(f.drucksachetyp??d.dokumentart??'Vorgangsposition'),step:d.vorgangsposition?clean(d.vorgangsposition):null,
  procedure:d.vorgangstyp?clean(d.vorgangstyp):null,documentNumber:f.dokumentnummer&&f.dokumentart!=='Plenarprotokoll'?clean(f.dokumentnummer):null,paperKey:papierschluessel(f.herausgeber,f.dokumentart,f.dokumentnummer),pdfUrl:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,
- committees:[...new Set(referrals.map(r=>r.id))],lead:referrals.find(r=>r.lead)?.id??null,ministries:[],topics:scanTopics(clean(d.titel)),
+ committees:[...new Set(referrals.map(r=>r.id))],lead:referrals.find(r=>r.lead)?.id??null,nurMitberatend,ministries:[],topics:scanTopics(clean(d.titel)),
  originator:(Array.isArray(f.urheber)?f.urheber:[]).map((u:unknown)=>clean(u)).join(', ')||null};
 }
 export async function committeeDocuments(since:string):Promise<DocumentInput[]>{

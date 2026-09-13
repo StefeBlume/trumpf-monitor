@@ -30,6 +30,7 @@ test('Überweisung wird nur für ausgewählte Ausschüsse übernommen',()=>{
  const m=mapCommitteePosition(position)!;
  assert.equal(m.lead,'we');
  assert.deepEqual(m.committees,['we']);               // Verkehrsausschuss nicht ausgewählt; Finanzausschuss nur federführend
+ assert.deepEqual(m.nurMitberatend,['fi'],'der mitberatende Finanzausschuss zählt nicht, wird aber vermerkt');
  assert.equal(m.documentNumber,'426/26');
  assert.equal(m.pdfUrl,'https://dserver.bundestag.de/brd/2026/0426-26.pdf');
  assert.equal(m.step,'Unterrichtung');
@@ -41,6 +42,7 @@ test('Überweisung wird nur für ausgewählte Ausschüsse übernommen',()=>{
  // Querschnittsausschüsse zählen nur federführend, sonst schlägt Routine-Mitberatung als Treffer durch.
  assert.equal(mapCommitteePosition({...position,ueberweisung:[{ausschuss_kuerzel:'Wi',federfuehrung:false}]}),null);
  assert.deepEqual(mapCommitteePosition({...position,ueberweisung:[{ausschuss_kuerzel:'Wi',federfuehrung:true}]})!.committees,['br-wi']);
+ assert.deepEqual(mapCommitteePosition({...position,ueberweisung:[{ausschuss_kuerzel:'Wi',federfuehrung:true}]})!.nurMitberatend,[]);
  assert.equal(mapCommitteePosition({...position,ueberweisung:[]}),null);
 });
 test('Fremde PDF-Adressen werden nicht als amtliche Quelle ausgegeben',()=>{
@@ -304,6 +306,48 @@ test('Altbestand mit doppelter Drucksachennummer wird nachträglich zusammengef�
  assert.equal(Number(waisen.rows[0].n),0);
  // Ein zweiter Durchgang findet nichts mehr.
  assert.equal(await deduplicate(),0);
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+// Der Hinweis auf weitere Ausschuesse hing am federfuehrenden Querschnittsausschuss: Bei 13 von 53 Vorlagen stand er,
+// obwohl das DIP keinen weiteren nannte, bei 17 fehlte er, obwohl es welche nannte. Jetzt vermerkt die Quelle, wer nur mitberaet.
+test('Nur mitberatende Querschnittsausschüsse werden vermerkt, ohne eine Änderung auszulösen',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-mitberatend-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const ausschuss:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ const volltext:Source={id:'dip-drucksachen',name:'V',institution:'Bundestag',url:doc.url,kind:'fulltext-dip',note:'Fixture'};
+ try{
+ // Bestand aus der Fassung davor traegt das Feld nicht. Die erneute Lieferung ergaenzt es ohne neue Version.
+ await runMonitor({sources:[ausschuss],fetcher:async()=>[{...doc,externalId:'pos-9'}]});
+ const zweiter=await runMonitor({sources:[ausschuss],fetcher:async()=>[{...doc,externalId:'pos-9',nurMitberatend:['ha','eu']}]});
+ assert.equal(zweiter?.items.length,0,'eine nachgetragene Mitberatung ist keine Änderung des Dokuments');
+ const erster=(await dashboard()).items[0];
+ assert.deepEqual(erster.nurMitberatend,['ha','eu']);
+ assert.equal(erster.version,1);
+ // Liegt das Papier schon aus der Volltextsuche vor, erbt deren Eintrag die Angabe der Ueberweisung.
+ await runMonitor({sources:[volltext,ausschuss],fetcher:async(s)=>s.id==='dip-drucksachen'
+  ? [{...doc,externalId:'drs-5',documentNumber:'21/555',paperKey:'BT-Drucksache 21/555',committees:[],lead:null}]
+  : [{...doc,externalId:'pos-5',documentNumber:'21/555',paperKey:'BT-Drucksache 21/555',nurMitberatend:['fi']}]});
+ const papier=(await dashboard()).items.filter(i=>i.paperKey==='BT-Drucksache 21/555');
+ assert.equal(papier.length,1);
+ assert.equal(papier[0].sourceId,'dip-drucksachen','der Volltexteintrag war zuerst da');
+ assert.deepEqual(papier[0].nurMitberatend,['fi'],'auch beim Zusammenführen im Lauf');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
+test('Beim nachträglichen Zusammenführen bleiben nur mitberatende Ausschüsse erhalten',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-dedup3-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ try{
+ const {db}=await import('../src/server/db');const c=await db();
+ const {deduplicate}=await import('../src/server/monitor');
+ const bau=(id:string,gremien:string[],mitberatend:string[])=>JSON.stringify({...doc,id,sourceId:'dip-committees',institution:'X',hash:id,version:1,change:'unchanged',
+  firstSeen:'2026-09-01T00:00:00.000Z',lastSeen:'2026-09-01T00:00:00.000Z',changedAt:'2026-09-01T00:00:00.000Z',
+  archived:false,documentNumber:'21/778',paperKey:'BT-Drucksache 21/778',committees:gremien,lead:gremien[0]??null,nurMitberatend:mitberatend});
+ await c.batch([
+  {sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?)',args:['aaa','dip-committees',bau('aaa',['we','um'],['eu'])]},
+  {sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?)',args:['bbb','dip-committees',bau('bbb',['we'],['ha'])]}
+ ],'write');
+ assert.equal(await deduplicate(),1);
+ const items=(await dashboard()).items;
+ assert.equal(items[0].id,'aaa');
+ assert.deepEqual(items[0].nurMitberatend,['eu','ha'],'die Angabe der entfernten Dublette geht nicht verloren');
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
 // Ein Stand aus einer frueheren Fassung traegt neuere Felder nicht. In CI kam die Datenbank aus dem
@@ -630,7 +674,7 @@ test('Jede Änderung des Themenrasters holt das Fenster neu',()=>{
  assert.notEqual(erfassungsstand(mit('halbleiter',t=>({...t,terms:[...t.terms,'extra']}))),ERFASSUNGSSTAND,'ein neuer Begriff');
  assert.notEqual(erfassungsstand(mit('dualuse',t=>({...t,ignore:[/anders/gi]}))),ERFASSUNGSSTAND,'eine geänderte Ausnahme');
  assert.notEqual(erfassungsstand(mit('ki',t=>({...t,context:{...t.context,naehe:undefined}}))),ERFASSUNGSSTAND,'eine geänderte Kontextregel');
- assert.notEqual(erfassungsstand(TOPICS,7),ERFASSUNGSSTAND,'eine neue Zuordnungslogik');
+ assert.notEqual(erfassungsstand(TOPICS,8),ERFASSUNGSSTAND,'eine neue Zuordnungslogik');
  assert.equal(erfassungsstand(TOPICS),ERFASSUNGSSTAND,'dasselbe Raster ergibt denselben Stand');
 });
 

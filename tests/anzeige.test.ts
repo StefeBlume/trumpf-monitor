@@ -101,7 +101,7 @@ test('Die Regel für Querschnittsausschüsse steht in der Oberfläche',()=>{
  assert.ok(quelle.includes('Vorlagen nur federführend'),'die Karten müssen es kennzeichnen');
  assert.ok(quelle.includes('nur, wenn sie federführend sind'),'die Regel muss erklärt werden');
  assert.ok(quelle.includes('zeigt deshalb oft mehr Ausschüsse'),'der Unterschied zum DIP gehört dazu');
- assert.ok(quelle.includes('möglicherweise weitere mitberatende'),'auch im Dokument selbst');
+ assert.ok(quelle.includes('Laut DIP beraten außerdem mit:'),'auch im Dokument selbst, mit den Namen');
 });
 
 // Fünf der sechs bevorstehenden Anhörungen lagen Wochen in der Zukunft; die Karte schrieb
@@ -381,5 +381,6 @@ test('Die Federführungsregel gilt für Vorlagen, nicht für Sitzungen',()=>{
  assert.ok(quelle.includes('Bei Vorlagen zählen {COMMITTEES.filter(c=>c.leadOnly).length} dieser Gremien nur'),'die Regel nennt ihren Geltungsbereich');
  assert.ok(quelle.includes('Ihre eigenen Sitzungen und Anhörungen erscheinen immer.'),'und die Ausnahme');
  assert.ok(!quelle.includes('zählt nur federführend'),'kein Abzeichen ohne Geltungsbereich');
- assert.ok(quelle.includes('{!istTermin(selected)&&selected.committees.some(c=>committeeById(c)?.leadOnly)&&'),'kein DIP-Hinweis bei Terminen');
+ assert.ok(quelle.includes('{nurMitberatend(selected).length>0&&'),'der DIP-Hinweis nennt, was tatsächlich weggelassen wurde');
+ assert.ok(!quelle.includes('möglicherweise weitere mitberatende'),'kein pauschaler Hinweis');
 });

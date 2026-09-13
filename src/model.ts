@@ -49,6 +49,7 @@ export interface DocumentInput {
  pdfUrl:string|null;           // amtliches PDF
  committees:string[];          // ids aus COMMITTEES
  lead:string|null;             // id des federführenden Ausschusses
+ nurMitberatend?:string[];     // ausgewählte Querschnittsausschüsse, die laut Quelle nur mitberaten; zählen nicht, werden genannt
  ministries:string[];          // ids aus MINISTRIES
  originator:string|null;       // Urheber laut Fundstelle
  topics:TopicMatch[];          // Fundstellen der TRUMPF-Themen, mit Beleg
