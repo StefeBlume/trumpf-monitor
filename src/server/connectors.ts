@@ -109,8 +109,9 @@ export async function fulltextDocuments(since:string):Promise<DocumentInput[]>{
  return docs;
 }
 const FILTERLIST='https://www.bundestag.de/ajax/filterlist/de/ausschuesse/';
-// Der amtliche RSS-Feed ist auf 15 Eintraege ueber alle Ausschuesse gedeckelt. Die Tagesordnungsliste
-// hinter derselben Seite liefert dieselben amtlichen PDFs mit Ausschussspalte und ohne diese Grenze.
+// Der amtliche RSS-Feed ist auf 15 Eintraege ueber alle Ausschuesse gedeckelt. Die Tagesordnungsliste hinter derselben
+// Seite liefert dieselben amtlichen PDFs mit Ausschussspalte - aber ebenfalls gedeckelt, auf 10 je Abruf, auch mit limit=50.
+// "Ohne diese Grenze" stand hier, bis nachgezaehlt wurde: Seite 2 enthielt 10 weitere, davon 3 ausgewaehlter Ausschuesse.
 export function matchCommitteeName(label:string):string|null{
  // Die Ausschussspalte ist kurz ("Verteidigung"), der amtliche Name lang ("Verteidigungsausschuss").
  // Deshalb gilt ein Wortpaar als Treffer, wenn das kuerzere Wort das laengere anfuehrt oder beide
@@ -129,8 +130,8 @@ export function matchCommitteeName(label:string):string|null{
  return best?.id??null;
 }
 export async function agendaDocuments():Promise<DocumentInput[]>{
- const url=`${FILTERLIST}1061622-1061622?offset=0&limit=50&noFilterSet=true`;
- return parseAgendaTable(await fetchOfficial(url),url).flatMap(row=>{
+ const zeilen=await blaettern(offset=>{const url=`${FILTERLIST}1061622-1061622?offset=${offset}&limit=${TERMINSEITE}&noFilterSet=true`;return fetchOfficial(url).then(html=>parseAgendaTable(html,url));});
+ return zeilen.flatMap(row=>{
  const id=matchCommitteeName(row.committee);
  return id?[{externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:sitzungstag(row.title)??row.date,updatedAt:row.date,topics:scanTopics(row.title),documentType:'Tagesordnung',step:'Sitzungstermin',
  procedure:null,documentNumber:null,pdfUrl:row.url.endsWith('.pdf')?row.url:null,committees:[id],lead:id,ministries:[],originator:COMMITTEES.find(c=>c.id===id)?.name??null}]:[];
@@ -138,7 +139,7 @@ export async function agendaDocuments():Promise<DocumentInput[]>{
 }
 // Anhoerungen und oeffentliche Sitzungen je ausgewaehltem Ausschuss. Eine leere Liste ist ein Fehler:
 // bricht das CMS die Struktur, faellt das auf, statt still nichts zu liefern.
-// Die Terminlisten liefern hoechstens 10 Eintraege je Abruf - auch limit=50 ergibt 10 -, neueste und angekuendigte zuerst.
+// Termin- und Tagesordnungslisten liefern hoechstens 10 Eintraege je Abruf - auch limit=50 ergibt 10 -, neueste zuerst.
 // Am 13.09. belegte der Rechtsausschuss 5 der 10 Plaetze mit kuenftigen Anhoerungen; ab elf Terminen im Zeitraum waeren
 // die uebrigen still weggefallen. Weitergeblaettert wird, solange eine volle Seite bis zuletzt Termine der letzten 30 Tage fuehrt.
 export const TERMINSEITE=10, TERMINSEITEN_MAX=5;

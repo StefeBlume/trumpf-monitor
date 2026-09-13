@@ -43,7 +43,7 @@ Auswahl und Regel ändern: `COMMITTEES` und `MINISTRIES` in `src/model.ts`. Die 
 | DIP `vorgangsposition` | API | `ueberweisung[].ausschuss_kuerzel` gegen die Auswahl, `leadOnly` beachtet |
 | DIP `drucksache-text` | API | Volltext aller Drucksachen gegen das Themenraster; zusätzlich alles aus den ausgewählten Ressorts |
 | Anhörungen und öffentliche Sitzungen | Terminlisten der Ausschüsse | je ausgewähltem Bundestagsausschuss eine eigene amtliche Liste; 10 Einträge je Abruf, geblättert wird, solange eine volle Seite noch Termine der letzten 30 Tage führt (höchstens 5 Seiten) |
-| Tagesordnungen | ausschussübergreifende Liste | Ausschussspalte gegen die Bundestagsauswahl |
+| Tagesordnungen | ausschussübergreifende Liste | Ausschussspalte gegen die Bundestagsauswahl; auch hier 10 Einträge je Abruf und dieselbe Blätterregel |
 | BMF-Sitemap | XML | Gesetze und Verordnungen des Bundesfinanzministeriums: Kürzel, Seitentyp und Änderungsdatum aus der Adresse; einen Verfahrensschritt nennt die Sitemap nicht |
 | Lobbyregister | JSON-API | je Thema eine Abfrage; aufgeführt wird, wer mindestens zwei Themen berührt |
 | BAFA-Feed Außenwirtschaft | RSS | nur Adressen unter `/Aussenwirtschaft/`; ohne Gremienbezug |

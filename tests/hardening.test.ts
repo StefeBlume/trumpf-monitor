@@ -270,6 +270,28 @@ test('Terminlisten werden geblättert, solange die Seite noch Termine im Zeitrau
  assert.equal(endlos.length,10);
 });
 
+import {agendaDocuments} from '../src/server/connectors';
+
+// Die Tagesordnungsliste wurde mit limit=50 abgerufen und lieferte 10. Seite 2 enthielt 10 weitere Tagesordnungen,
+// 3 davon von ausgewählten Ausschüssen; der Kommentar behauptete, die Liste habe keine Grenze.
+test('Die Tagesordnungsliste wird über die erste Seite hinaus gelesen',async()=>{
+ const tag=(vor:number)=>new Intl.DateTimeFormat('de-DE',{day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Berlin'}).format(new Date(Date.now()-vor*86400000));
+ const zeile=(n:number,vor:number)=>`<tr><td>${tag(vor)}</td><td>Verteidigung</td><td><a href="https://www.bundestag.de/resource/blob/${n}/to.pdf">Tagesordnung ${n}</a></td></tr>`;
+ const seiten:Record<string,string>={
+  '0':`<template data-js-document-results="table">${Array.from({length:10},(_,i)=>zeile(i,i%3)).join('')}</template>`,
+  '10':`<template data-js-document-results="table">${zeile(10,4)}${zeile(11,5)}</template>`
+ };
+ const echt=globalThis.fetch;const gefragt:string[]=[];
+ globalThis.fetch=(async(u:any)=>{const o=new URL(String(u)).searchParams.get('offset')??'';gefragt.push(o);
+  return new Response(seiten[o]??'<template data-js-document-results="table"></template>',{status:200,headers:{'content-type':'text/html; charset=utf-8'}});}) as typeof fetch;
+ try{
+  const docs=await agendaDocuments();
+  assert.deepEqual(gefragt,['0','10'],'nach einer vollen ersten Seite folgt die zweite');
+  assert.equal(docs.length,12,'alle zwölf Tagesordnungen kommen an');
+  assert.ok(docs.every(d=>d.lead==='vt'&&d.originator==='Verteidigungsausschuss'));
+ }finally{globalThis.fetch=echt;}
+});
+
 import {fetchTimeoutFor} from '../src/server/connectors';
 
 test('Das Zeitlimit wächst mit der erlaubten Antwortgröße',()=>{
