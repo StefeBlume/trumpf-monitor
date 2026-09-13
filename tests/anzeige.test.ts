@@ -529,3 +529,21 @@ test('Jeder Lauf baut den neuesten Code, mit den eigenen Daten',()=>{
  assert.ok(!/^\s+if:/m.test(schritt),'der Schritt läuft immer, nicht nur bei neuen Daten');
  assert.ok(readFileSync('README.md','utf8').includes('**Immer der neueste Code.**'),'README');
 });
+
+// Sechs Akteure mit genau einer Stelle standen live als "1 Vollzeitstellen" da, darunter Schaeffler und Drees & Sommer.
+test('Eine Vollzeitstelle steht in der Einzahl',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes("Vollzeitstelle{e.staffFte===1?'':'n'}"),'Einzahl bei genau 1');
+ assert.ok(!seite.includes("toLocaleString('de-DE')} Vollzeitstellen"),'keine feste Mehrzahl');
+});
+
+// Vier Akteure-Karten zeigten live "und 1 weitere" - darunter der eigene TRUMPF-Eintrag ganz oben. "Vorhaben" ist sächlich.
+// Dieselbe Art Fehler stand in drei Sätzen, die bei genau einem Dokument oder Akteur falsch geworden wären.
+test('Zahlen vor Wörtern stimmen auch bei genau 1',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes("und {gesamt-4} weitere{gesamt-4===1?'s':''}"),'und 1 weiteres');
+ assert.ok(seite.includes("Dokumenten ${relevant.length===1?'nennt':'nennen'} ein TRUMPF-Thema."),'1 von 128 Dokumenten nennt');
+ assert.ok(seite.includes("{ohneGremium.length===1?'ist keinem dieser Gremien zugewiesen; es stammt aus':'sind keinem dieser Gremien zugewiesen; sie stammen aus'}"),'1 von 74 Dokumenten ist');
+ assert.ok(seite.includes("{ohneGremium.length===1?'Es erscheint':'Sie erscheinen'}"));
+ assert.ok(seite.includes("${s.count===1?'Akteur':'Akteure'} im Register"),'1 Akteur');
+});
