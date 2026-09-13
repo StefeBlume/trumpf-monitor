@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {recency,datumsteil,suchtext,bewegungswort,datum,nurTag,anzeigeStatus} from '../src/ui/format';
+import {recency,datumsteil,suchtext,bewegungswort,datum,nurTag,anzeigeStatus,berlinTag} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
  url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
@@ -266,7 +266,7 @@ test('Fußnote, Quellenhinweis und Datumsfilter sagen, was die App tut',()=>{
  // Keine Quelle ist "offen"; der Hinweis erklärte einen Zustand, den es nicht gab.
  assert.ok(seite.includes("{data.sources.some(s=>s.status==='manual')&&<div className=\"notice\">"),'der Offen-Hinweis erscheint nur, wenn es offene Quellen gibt');
  // Die Liste führt die letzte Bewegung; der Filter prüfte das Dokumentdatum und blendete aktuelle Bewegungen alter Papiere aus.
- assert.ok(seite.includes('(!after||recency(i).slice(0,10)>=after)'),'gefiltert wird nach demselben Datum, nach dem sortiert wird');
+ assert.ok(seite.includes('(!after||berlinTag(recency(i))>=after)'),'gefiltert wird nach demselben Datum, nach dem sortiert wird, als Berliner Tag');
  assert.ok(seite.includes('<label>Letzte Bewegung ab<input type="date"'),'und die Beschriftung sagt es');
  assert.ok(!seite.includes('Veröffentlicht ab'));
 });
@@ -383,4 +383,32 @@ test('Die Federführungsregel gilt für Vorlagen, nicht für Sitzungen',()=>{
  assert.ok(!quelle.includes('zählt nur federführend'),'kein Abzeichen ohne Geltungsbereich');
  assert.ok(quelle.includes('{nurMitberatend(selected).length>0&&'),'der DIP-Hinweis nennt, was tatsächlich weggelassen wurde');
  assert.ok(!quelle.includes('möglicherweise weitere mitberatende'),'kein pauschaler Hinweis');
+});
+
+// Die Briefingansicht nutzte die Karte des Lagebilds mit ihrem 24-Stunden-Status. Mit der Uhr 48 Stunden
+// später trugen alle 18 Karten des Briefings "30 neue oder geänderte Dokumente" das Etikett "Unverändert",
+// die Dokumentansicht ebenso. Ein Briefing ist ein gespeicherter Stand und zeigt, was in seinem Lauf geschah.
+test('Briefings zeigen den Status ihres Laufs, nicht den der letzten 24 Stunden',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ const start=seite.indexOf("view==='briefings'");
+ // Nicht per [^>]*: der Klick-Handler enthaelt selbst ein "=>".
+ const karten=seite.slice(start,seite.indexOf('Änderungslog',start)).split('<ItemCard ').slice(1).map(k=>k.slice(0,k.indexOf('/>')));
+ assert.equal(karten.length,2,'beide Kartengruppen des Briefings');
+ for(const k of karten)assert.ok(k.includes('status={i.change}')&&k.includes('setAusBriefing(true)'),k);
+ assert.ok(seite.includes('const stand=status??anzeigeStatus(item);'),'die Karte nimmt den übergebenen Status');
+ assert.ok(seite.includes("{'item-stripe '+stand}")&&seite.includes('{labels[stand]}'),'Streifen und Etikett folgen ihm');
+ assert.ok(seite.includes('ausBriefing?selected.change:anzeigeStatus(selected)')&&seite.includes('{labels[detailStatus]}'),'die Dokumentansicht zeigt denselben Status');
+ assert.ok(seite.includes('useEffect(()=>{if(!selected)setAusBriefing(false);},[selected]);'),'und vergisst ihn beim Schließen');
+ // Das Lagebild bleibt beim 24-Stunden-Status.
+ assert.ok(seite.includes('<ItemCard key={item.id} item={item} onClick={()=>setSelected(item)}/>'));
+});
+
+test('Tage werden nach Berliner Kalender verglichen',()=>{
+ assert.equal(berlinTag('2026-09-04T22:30:00.000Z'),'2026-09-05','00:30 Uhr in Berlin ist in UTC noch der Vortag');
+ assert.equal(berlinTag('2026-09-05T00:00:00.000Z'),'2026-09-05','reine Tage bleiben, wie die Quelle sie nennt');
+ assert.equal(berlinTag('2026-10-14'),'2026-10-14');
+ const nacht={updatedAt:'2026-09-04T22:30:00.000Z',publishedAt:'2026-09-05T00:00:00.000Z',firstSeen:'2026-09-05T08:00:00.000Z'};
+ assert.equal(datumsteil(nacht,s=>datum(s)).eigenes,null,'kein doppeltes Datum auf der Karte');
+ assert.equal(bewegungswort('2026-09-12T22:30:00Z','2026-09-12'),'nächster Termin','in Berlin schon der 13.');
+ assert.ok(readFileSync('pages/index.tsx','utf8').includes('(!after||berlinTag(recency(i))>=after)'),'der Filter nach letzter Bewegung');
 });

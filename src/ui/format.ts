@@ -13,7 +13,7 @@ export const recency=(i:Pick<Item,'updatedAt'|'publishedAt'|'firstSeen'>)=>i.upd
 // Datum des Papiers folgt nur, wenn es davon abweicht.
 export function datumsteil(i:Pick<Item,'updatedAt'|'publishedAt'|'firstSeen'>,format:(s:string|null)=>string){
  const gefuehrt=format(recency(i));
- const eigenes=i.publishedAt&&recency(i).slice(0,10)!==i.publishedAt.slice(0,10)?format(i.publishedAt):null;
+ const eigenes=i.publishedAt&&berlinTag(recency(i))!==berlinTag(i.publishedAt)?format(i.publishedAt):null;
  return {gefuehrt,eigenes};
 }
 
@@ -32,13 +32,19 @@ export function suchtext(i:Item,gremien:string[]):string{
 // obwohl der Termin stimmt. Verglichen wird nach Berliner Kalendertag, nicht nach Uhrzeit: eine
 // Anhoerung, die heute um zehn Uhr beginnt, ist bis zum Abend noch der naechste Termin.
 export const bewegungswort=(stamp:string|null|undefined,heute:string):'zuletzt'|'nächster Termin'=>
- (stamp??'').slice(0,10)>heute?'nächster Termin':'zuletzt';
+ (stamp?berlinTag(stamp):'')>heute?'nächster Termin':'zuletzt';
 
 // Viele Quellen fuehren nur einen Tag: Terminlisten, Tagesordnungen, die Dateinamen des BAFA. Gespeichert
 // als Mitternacht UTC, zeigte die Dokumentansicht "23.09.2026, 02:00" - eine Uhrzeit, die keine Quelle
 // genannt hat, und westlich von Greenwich den Vortag. Reine Tage werden deshalb ohne Uhrzeit und in UTC
 // gelesen; echte Zeitpunkte, etwa die Aenderungszeit im DIP, in Berliner Zeit.
 export const nurTag=(s:string)=>/T00:00:00(?:\.000)?Z$/.test(s);
+// Der Kalendertag, den die Anzeige nennt. Verglichen wurde vorher der UTC-Tag: Eine DIP-Aenderung um 00:30 Uhr
+// am 5. September steht in UTC noch am 4. Die Karte zeigte dann "05. Sept. 2026 · Dokument vom 05. Sept. 2026",
+// und der Filter "Letzte Bewegung ab 5.9." liess sie weg, obwohl sie den 5. trug.
+export function berlinTag(s:string):string{
+ return nurTag(s)||isNaN(Date.parse(s))?s.slice(0,10):new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Berlin'}).format(new Date(s));
+}
 export function datum(s:string|null|undefined,mitZeit=false):string{
  if(!s)return 'Kein Datum in der Quelle';
  const tag=nurTag(s);
