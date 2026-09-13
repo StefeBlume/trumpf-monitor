@@ -471,3 +471,16 @@ test('Die Suche findet Gremien auch unter ihrem amtlichen Namen',()=>{
  assert.deepEqual(gremienNamen({committees:['gibt-es-nicht'],ministries:[]}),[],'Unbekanntes bleibt draußen');
  assert.ok(readFileSync('pages/index.tsx','utf8').includes('suchtext(i,gremienNamen(i))'),'die Dokumentliste sucht damit');
 });
+
+// Briefings werden ohne Fundstellen ausgeliefert. Aus dem Briefing geöffnet, fehlten Themen und Belege - live bei allen
+// 8 Einträgen mit Thema. Und "Briefing lesen" unter der Zusammenfassung des neuesten Laufs öffnete ein vorher gewähltes älteres.
+test('Aus dem Briefing geöffnete Dokumente behalten ihre Fundstellen',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ const start=seite.indexOf("view==='briefings'");
+ const karten=seite.slice(start,seite.indexOf('Änderungslog',start)).split('<ItemCard ').slice(1).map(k=>k.slice(0,k.indexOf('/>')));
+ assert.equal(karten.length,2);
+ for(const k of karten)assert.ok(k.includes('item={mitFundstellen(i)}')&&k.includes('setSelected(mitFundstellen(i))'),k);
+ assert.ok(seite.includes('topics:data.items.find(x=>x.id===i.id)?.topics??i.topics'),'die Fundstellen kommen aus dem Bestand');
+ assert.ok(seite.includes("onClick={()=>{setPickedBriefing('');navigate(latest?'briefings':'sources');}}"),'„Briefing lesen“ öffnet das neueste');
+ assert.ok(seite.includes('disabled={!data.items.some(i=>i.id===e.itemId)}'),'ein Logeintrag ohne Dokument ist nicht klickbar');
+});
