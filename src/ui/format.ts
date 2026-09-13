@@ -34,12 +34,20 @@ export function themenReihenfolge<T extends {topic:string}>(ms:T[],thema?:string
  return thema?[...ms].sort((a,b)=>Number(b.topic===thema)-Number(a.topic===thema)):ms;
 }
 
-// Ausschuesse kuendigen Anhoerungen im Voraus an. Auf der Karte des Rechtsausschusses stand deshalb
-// "zuletzt 14. Okt. 2026", waehrend heute der 12. September war - das liest sich wie ein Datumsfehler,
-// obwohl der Termin stimmt. Verglichen wird nach Berliner Kalendertag, nicht nach Uhrzeit: eine
-// Anhoerung, die heute um zehn Uhr beginnt, ist bis zum Abend noch der naechste Termin.
-export const bewegungswort=(stamp:string|null|undefined,heute:string):'zuletzt'|'nächster Termin'=>
- (stamp?berlinTag(stamp):'')>heute?'nächster Termin':'zuletzt';
+// Bei Terminen ist publishedAt der Sitzungstag, nicht der Tag einer Veroeffentlichung.
+export const istTermin=(i:Pick<Item,'documentType'>)=>i.documentType==='Ausschusstermin'||i.documentType==='Tagesordnung';
+// Welches Datum eine Gremienkarte nennt. Ausschuesse kuendigen Anhoerungen Wochen im Voraus an. Erst stand davor
+// "zuletzt", dann zwar "naechster Termin", aber mit dem spaetesten Datum: Beim Rechtsausschuss mit fuenf
+// angekuendigten Terminen hiess es "naechster Termin 14. Okt. 2026", der naechste war der 23. September.
+// Kommt etwas, nennt die Karte das frueheste davon, sonst die juengste Bewegung. Ein Termin von heute kommt noch,
+// wie unter "Als Naechstes"; eine Aenderung von heute ist geschehen. Verglichen wird der Berliner Kalendertag.
+export function kartenDatum(items:Pick<Item,'updatedAt'|'publishedAt'|'firstSeen'|'documentType'>[],heute:string):{wort:'zuletzt'|'nächster Termin';stamp:string}|null{
+ if(!items.length)return null;
+ const kommend=items.map(i=>istTermin(i)&&i.publishedAt
+   ?(berlinTag(i.publishedAt)>=heute?i.publishedAt:null)
+   :(berlinTag(recency(i))>heute?recency(i):null)).filter((s):s is string=>!!s).sort();
+ return kommend.length?{wort:'nächster Termin',stamp:kommend[0]}:{wort:'zuletzt',stamp:items.map(recency).sort().at(-1)!};
+}
 
 // Viele Quellen fuehren nur einen Tag: Terminlisten, Tagesordnungen, die Dateinamen des BAFA. Gespeichert
 // als Mitternacht UTC, zeigte die Dokumentansicht "23.09.2026, 02:00" - eine Uhrzeit, die keine Quelle

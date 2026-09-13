@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {recency,datumsteil,suchtext,bewegungswort,datum,nurTag,anzeigeStatus,berlinTag,themenReihenfolge} from '../src/ui/format';
+import {recency,datumsteil,suchtext,kartenDatum,datum,nurTag,anzeigeStatus,berlinTag,themenReihenfolge} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
  url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
@@ -105,12 +105,22 @@ test('Die Regel für Querschnittsausschüsse steht in der Oberfläche',()=>{
 });
 
 // Fünf der sechs bevorstehenden Anhörungen lagen Wochen in der Zukunft; die Karte schrieb
-// "zuletzt 14. Okt. 2026", obwohl heute der 12. September war.
-test('Angekündigte Termine heißen nicht „zuletzt“',()=>{
- assert.equal(bewegungswort('2026-10-14','2026-09-12'),'nächster Termin');
- assert.equal(bewegungswort('2026-09-11','2026-09-12'),'zuletzt');
- assert.equal(bewegungswort('2026-09-12T08:00:00Z','2026-09-12'),'zuletzt','heute ist noch kein künftiger Termin');
- assert.equal(bewegungswort(undefined,'2026-09-12'),'zuletzt','ohne Datum bleibt es bei der Vergangenheit');
+// "zuletzt 14. Okt. 2026", obwohl heute der 12. September war. Danach hieß es "nächster Termin 14. Okt. 2026":
+// das späteste Datum. Der nächste der fünf angekündigten Termine des Rechtsausschusses lag am 23. September.
+test('Gremienkarten nennen den nächsten Termin, nicht den spätesten',()=>{
+ const termin=(tag:string)=>({documentType:'Ausschusstermin',publishedAt:`${tag}T00:00:00.000Z`,updatedAt:null,firstSeen:'2026-09-01T08:00:00.000Z'});
+ const vorlage=(stamp:string)=>({documentType:'Gesetzentwurf',publishedAt:null,updatedAt:stamp,firstSeen:'2026-09-01T08:00:00.000Z'});
+ const heute='2026-09-13';
+ assert.deepEqual(kartenDatum([vorlage('2026-09-11T10:00:00.000Z'),termin('2026-10-14'),termin('2026-09-23'),termin('2026-09-30')],heute),
+  {wort:'nächster Termin',stamp:'2026-09-23T00:00:00.000Z'},'der früheste kommende, nicht der späteste');
+ assert.deepEqual(kartenDatum([vorlage('2026-09-11T10:00:00.000Z'),vorlage('2026-09-08T10:00:00.000Z'),termin('2026-09-02')],heute),
+  {wort:'zuletzt',stamp:'2026-09-11T10:00:00.000Z'},'sonst die jüngste Bewegung');
+ assert.equal(kartenDatum([termin('2026-09-13'),vorlage('2026-09-12T10:00:00.000Z')],heute)?.wort,'nächster Termin','ein Termin von heute kommt noch, wie unter „Als Nächstes“');
+ assert.equal(kartenDatum([vorlage('2026-09-13T08:00:00.000Z')],heute)?.wort,'zuletzt','eine Änderung von heute ist geschehen');
+ assert.equal(kartenDatum([],heute),null,'ohne Einträge nennt die Karte kein Datum');
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.equal((seite.match(/stand=kartenDatum\(items,today\(\)\)/g)??[]).length,2,'Ausschuss- und Ressortkarten');
+ assert.ok(!seite.includes('.map(recency).sort().at(-1)'),'kein spätestes Datum mehr auf den Karten');
 });
 
 // Auf einem 375px-Telefon blieb die Quellenliste zweispaltig: 137px breite Karten, deren
@@ -409,7 +419,7 @@ test('Tage werden nach Berliner Kalender verglichen',()=>{
  assert.equal(berlinTag('2026-10-14'),'2026-10-14');
  const nacht={updatedAt:'2026-09-04T22:30:00.000Z',publishedAt:'2026-09-05T00:00:00.000Z',firstSeen:'2026-09-05T08:00:00.000Z'};
  assert.equal(datumsteil(nacht,s=>datum(s)).eigenes,null,'kein doppeltes Datum auf der Karte');
- assert.equal(bewegungswort('2026-09-12T22:30:00Z','2026-09-12'),'nächster Termin','in Berlin schon der 13.');
+ assert.equal(kartenDatum([{documentType:'Gesetzentwurf',publishedAt:null,updatedAt:'2026-09-12T22:30:00.000Z',firstSeen:'2026-09-01T00:00:00.000Z'}],'2026-09-12')?.wort,'nächster Termin','in Berlin schon der 13.');
  assert.ok(readFileSync('pages/index.tsx','utf8').includes('(!after||berlinTag(recency(i))>=after)'),'der Filter nach letzter Bewegung');
 });
 
@@ -426,4 +436,11 @@ test('Unter einem Themenfilter belegt die Karte das gewählte Thema',()=>{
  assert.ok(seite.includes('const m=themenReihenfolge(topicsOf(item),thema);'),'die Karte');
  assert.equal((seite.match(/<TopicCard /g)??[]).length,(seite.match(/<TopicCard [^\n]*thema=\{topic\}/g)??[]).length,'jeder Aufruf reicht den Filter durch');
  assert.ok(seite.includes('themenReihenfolge(topicsOf(selected),topic).map('),'die Dokumentansicht ordnet gleich');
+});
+
+test('Der Quellenfilter bietet nur Dokumentquellen an, Typen stehen in deutscher Ordnung',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes("data.sources.filter(s=>s.kind!=='lobby').map(s=><option"),'das Lobbyregister liefert keine Dokumente');
+ assert.ok(seite.includes(".sort((a,b)=>a.localeCompare(b,'de'))"),'„Änderungsantrag“ steht nicht hinter „Verordnung“');
+ assert.deepEqual(['Verordnung','Änderungsantrag','Antrag'].sort((a,b)=>a.localeCompare(b,'de')),['Änderungsantrag','Antrag','Verordnung']);
 });
