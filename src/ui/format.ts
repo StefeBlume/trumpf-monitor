@@ -43,6 +43,18 @@ export function themenReihenfolge<T extends {topic:string}>(ms:T[],thema?:string
 
 // Bei Terminen ist publishedAt der Sitzungstag, nicht der Tag einer Veroeffentlichung.
 export const istTermin=(i:Pick<Item,'documentType'>)=>i.documentType==='Ausschusstermin'||i.documentType==='Tagesordnung';
+// Ein Termin von heute kommt noch - wie unter "Als Naechstes" und auf der Gremienkarte.
+export const kommenderTermin=(i:Pick<Item,'documentType'|'publishedAt'>,heute:string)=>istTermin(i)&&!!i.publishedAt&&berlinTag(i.publishedAt)>=heute;
+// Reihenfolge der Dokumentlisten: nach letzter Bewegung, neueste zuerst. Angekuendigte Termine stehen davor, der naechste
+// oben. Vorher standen sie als "neueste" umgekehrt ueber allem: beim Rechtsausschuss fuenf Anhoerungen vom 14. Oktober
+// abwaerts, der naechste Termin am 23. September erst an fuenfter Stelle - unter der Ueberschrift "Bewegungen der letzten 10 Tage".
+export function listenOrdnung(heute:string){
+ return (a:Pick<Item,'documentType'|'publishedAt'|'updatedAt'|'firstSeen'>,b:Pick<Item,'documentType'|'publishedAt'|'updatedAt'|'firstSeen'>)=>{
+  const ka=kommenderTermin(a,heute),kb=kommenderTermin(b,heute);
+  if(ka!==kb)return ka?-1:1;
+  return ka?a.publishedAt!.localeCompare(b.publishedAt!):recency(b).localeCompare(recency(a));
+ };
+}
 // Welches Datum eine Gremienkarte nennt. Ausschuesse kuendigen Anhoerungen Wochen im Voraus an. Erst stand davor
 // "zuletzt", dann zwar "naechster Termin", aber mit dem spaetesten Datum: Beim Rechtsausschuss mit fuenf
 // angekuendigten Terminen hiess es "naechster Termin 14. Okt. 2026", der naechste war der 23. September.

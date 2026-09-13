@@ -84,6 +84,19 @@ jobs:
           key: static-${{ github.run_id }}
           restore-keys: static-
 
+      # Laeufe fuer aeltere Commits koennen nach neueren starten. Am 13.09. begann der Lauf fuer 4d13daa (angelegt 09:49)
+      # erst nach dem fuer 96312ef und lieferte um 09:53 dessen aeltere Oberflaeche wieder aus - beide "erfolgreich".
+      # Gebaut wird deshalb immer der neueste Code; die Daten kommen aus diesem Lauf, der sie gerade abgerufen hat.
+      - name: Neuesten Code holen
+        run: |
+          cp public/bootstrap.json "$RUNNER_TEMP/bootstrap-bau.json"
+          pakete=$(git hash-object package-lock.json)
+          git fetch --quiet origin main
+          git reset --quiet --hard origin/main
+          cp "$RUNNER_TEMP/bootstrap-bau.json" public/bootstrap.json
+          if [ "$(git hash-object package-lock.json)" != "$pakete" ]; then npm ci; fi
+          echo "Ausgeloest von ${GITHUB_SHA::7}, gebaut wird $(git rev-parse --short HEAD)"
+
       - name: Seite bauen
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ github.event.repository.name != format('{0}.github.io', github.repository_owner) && format('/{0}', github.event.repository.name) || '' }}

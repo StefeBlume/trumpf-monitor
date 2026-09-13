@@ -4,7 +4,7 @@ import {Radar,LayoutDashboard,FileText,Radio,Settings,Search,ArrowUpRight,Refres
 import {COMMITTEES,MINISTRIES,SOURCES,committeeById,type Dashboard,type Item,type Briefing,type Change} from '../src/model';
 import {TOPICS,topicById,type TopicMatch} from '../src/server/topics';
 import type {LobbyProject} from '../src/server/lobby';
-import {recency,datumsteil as datumsteilRoh,suchtext,kartenDatum,istTermin,datum,nurTag,withTopics,anzeigeStatus,STATUS_STUNDEN,berlinTag,themenReihenfolge,quellenStand,gremienNamen} from '../src/ui/format';
+import {recency,datumsteil as datumsteilRoh,suchtext,kartenDatum,istTermin,datum,nurTag,withTopics,anzeigeStatus,STATUS_STUNDEN,berlinTag,themenReihenfolge,quellenStand,gremienNamen,listenOrdnung,kommenderTermin} from '../src/ui/format';
 // Statischer Betrieb auf GitHub Pages: kein Server, kein Schlüssel. Die Seite liest den Stand,
 // den der tägliche Lauf in bootstrap.json geschrieben hat. Alles, was einen Server braucht, entfällt.
 const STATIC=process.env.NEXT_PUBLIC_STATIC==='1';
@@ -87,11 +87,11 @@ export default function Home(){
  const mitFundstellen=(i:Item):Item=>({...i,topics:data.items.find(x=>x.id===i.id)?.topics??i.topics});
  const types=[...new Set(data.items.map(i=>i.documentType))].sort((a,b)=>a.localeCompare(b,'de'));
  const inTopic=(i:Item)=>!topic||topicsOf(i).some(m=>m.topic===topic);
- const matches=data.items.filter(i=>i.archived===showArchive&&inTopic(i)&&(!source||i.sourceId===source)&&(!body||i.committees.includes(body)||i.ministries.includes(body))&&(!status||anzeigeStatus(i)===status)&&(!docType||i.documentType===docType)&&(!after||berlinTag(recency(i))>=after)&&(!query||suchtext(i,gremienNamen(i)).includes(query.trim().toLowerCase()))).sort((a,b)=>recency(b).localeCompare(recency(a)));
+ const matches=data.items.filter(i=>i.archived===showArchive&&inTopic(i)&&(!source||i.sourceId===source)&&(!body||i.committees.includes(body)||i.ministries.includes(body))&&(!status||anzeigeStatus(i)===status)&&(!docType||i.documentType===docType)&&(!after||berlinTag(recency(i))>=after)&&(!query||suchtext(i,gremienNamen(i)).includes(query.trim().toLowerCase()))).sort(listenOrdnung(today()));
  // Termine tragen nur einen kurzen Titel und treffen das Themenraster so gut wie nie. Der Filter
  // wuerde den Kalender bei jeder Auswahl leeren, deshalb bleibt er vollstaendig - und sagt das.
  const upcoming=data.items.filter(i=>!i.archived&&isUpcoming(i)).sort((a,b)=>a.publishedAt!.localeCompare(b.publishedAt!));
- const relevant=data.items.filter(i=>!i.archived&&topicsOf(i).length).sort((a,b)=>recency(b).localeCompare(recency(a)));
+ const relevant=data.items.filter(i=>!i.archived&&topicsOf(i).length).sort(listenOrdnung(today()));
  const topicCount=(id:string)=>data.items.filter(i=>!i.archived&&topicsOf(i).some(m=>m.topic===id)).length;
  const shown=topic?relevant.filter(inTopic):relevant;
  // Der Themenfilter ist eine Brille auf den Bestand und muss ueberall gelten, wo Dokumente gezaehlt
@@ -114,7 +114,7 @@ export default function Home(){
  function navigate(to:string){setSelected(null);setGremium(null);setView(to);setNotice('');mainRef.current?.scrollTo(0,0);}
  // Ein Klick auf ein Gremium oeffnet dessen eigene Liste, statt gefiltert auf die Startseite zu springen.
  function openBody(id:string){setGremium(id);setSelected(null);mainRef.current?.scrollTo(0,0);}
- const gremiumItems=gremium?data.items.filter(i=>!i.archived&&inTopic(i)&&(i.committees.includes(gremium)||i.ministries.includes(gremium))).sort((a,b)=>recency(b).localeCompare(recency(a))):[];
+ const gremiumItems=gremium?data.items.filter(i=>!i.archived&&inTopic(i)&&(i.committees.includes(gremium)||i.ministries.includes(gremium))).sort(listenOrdnung(today())):[];
  const gremiumInfo=gremium?committeeById(gremium)??ministryById(gremium):undefined;
  async function saveConnection(){try{const u=new URL(draft.url||window.location.origin);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash)throw new Error('Bitte eine gültige Server-Adresse eingeben.');const next={url:u.origin,token:draft.token.trim()};if(!next.token)throw new Error('Verbindungsschlüssel fehlt.');setBusy(true);if(await refresh(next)){localStorage.setItem('policy-connection',JSON.stringify(next));setConn(next);setNotice('Verbindung gespeichert.');}}catch(e){setError(e instanceof Error?e.message:'Verbindung ungültig.');}finally{setBusy(false);}}
  async function exportBriefing(b:Briefing){
@@ -140,7 +140,7 @@ export default function Home(){
  <div className="content">{error&&<div className="notice error" role="alert"><AlertCircle size={19}/><span>{error}</span><button aria-label="Meldung schließen" onClick={()=>setError('')}><X size={17}/></button></div>}{notice&&<div className="notice" role="status"><Check size={19}/><span>{notice}</span></div>}
  {gremium&&!selected?<><button className="back" onClick={()=>setGremium(null)}><ArrowLeft size={18}/> Zurück zur Übersicht</button>
  <div className="detail-heading"><div className="eyebrow">{gremiumInfo&&'institution' in gremiumInfo?gremiumInfo.institution:'Ressort'}</div><h1>{gremiumInfo?.name}</h1><p className="muted">{gremiumInfo?.scope}</p></div>
- <section className="results"><div className="section-heading"><h2>Dokumente <span>{gremiumItems.length}</span></h2><span className="muted">Nach letzter Bewegung · Bewegungen der letzten 10 Tage</span></div>
+ <section className="results"><div className="section-heading"><h2>Dokumente <span>{gremiumItems.length}</span></h2><span className="muted">{gremiumItems.some(i=>kommenderTermin(i,today()))?'Angekündigte Termine zuerst, dann nach letzter Bewegung':'Nach letzter Bewegung'} · Bewegungen der letzten 10 Tage</span></div>
  {gremiumItems.length?<div className="item-list">{gremiumItems.map(i=><ItemCard key={i.id} item={i} onClick={()=>setSelected(i)}/>)}</div>:
  <div className="empty"><Landmark size={36}/><h3>Keine Dokumente im Zeitraum</h3><p>Aus diesem Gremium ist in den letzten 10 Tagen nichts eingegangen. Das ist eine Aussage über den Zeitraum, nicht über das Gremium.</p></div>}</section></>:
  selected?<><button className="back" onClick={()=>{setSelected(null);}}><ArrowLeft size={18}/> Zurück zur Übersicht</button><div className="detail-heading"><div className="eyebrow">{lead?lead.name:selected.institution} · {selected.documentType}</div><h1>{selected.title}</h1><div className="tags"><span className={'badge '+detailStatus}>{labels[detailStatus]}</span>{selected.documentNumber&&<span className="badge neutral">Drucksache {selected.documentNumber}</span>}{selected.step&&<span className="badge neutral">{selected.step}</span>}{selected.archived&&<span className="badge neutral">Archiviert</span>}</div></div><div className="detail-tabs"><button className={tab==='detail'?'active':''} onClick={()=>setTab('detail')}>Dokument & Quelle</button>{!STATIC&&<button className={tab==='history'?'active':''} onClick={loadHistory}>Versionen & Änderungen</button>}</div>
@@ -164,7 +164,7 @@ export default function Home(){
  <p>Durchsucht werden Titel und – wo die Quelle ihn führt – der Volltext. Ein Treffer ist eine Fundstelle, keine Einschätzung: die App zeigt den Begriff und seinen Zusammenhang.</p>
  <div className="hero-bottom"><span>{latest?.summary??'Noch kein Quellenlauf.'}</span><button onClick={()=>{setPickedBriefing('');navigate(latest?'briefings':'sources');}}>{latest?'Briefing lesen':'Quellen ansehen'} <ArrowUpRight size={18}/></button></div></section>
  {themenleiste(topicCount)}
- {!showArchive&&<section className="results"><div className="section-heading"><h2><Target size={19}/> Thementreffer <span>{shown.length}</span></h2><span className="muted">{topic?topicById(topic)?.why:'Nach letzter Bewegung · Bewegungen der letzten 10 Tage'}</span></div>
+ {!showArchive&&<section className="results"><div className="section-heading"><h2><Target size={19}/> Thementreffer <span>{shown.length}</span></h2><span className="muted">{topic?topicById(topic)?.why:`${shown.some(i=>kommenderTermin(i,today()))?'Angekündigte Termine zuerst, dann nach letzter Bewegung':'Nach letzter Bewegung'} · Bewegungen der letzten 10 Tage`}</span></div>
  {shown.length?<><div className="item-list">{(alleTreffer?shown:shown.slice(0,8)).map(item=><TopicCard key={item.id} item={item} thema={topic} onClick={()=>setSelected(item)}/>)}</div>
  {shown.length>8&&<button className="text-button" onClick={()=>setAlleTreffer(!alleTreffer)}>{alleTreffer?'Weniger zeigen':`Alle ${shown.length} Thementreffer zeigen`}</button>}</>:
  <div className="empty"><Target size={36}/><h3>Kein Dokument mit diesen Begriffen</h3><p>{data.items.length?'Im erfassten Zeitraum kam keiner der Suchbegriffe vor. Das ist eine Aussage über die Begriffe, nicht über die Lage.':'Starte den ersten Quellenlauf.'}</p></div>}</section>}

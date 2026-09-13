@@ -26,7 +26,7 @@ Das Raster in `src/server/topics.ts` folgt dem Geschäft von TRUMPF: Familienunt
 
 **Ausnahmen.** Zwei feste Formulierungen zählen nicht als Fundstelle: beim Mittelstand die Kostenformel jedes Gesetzentwurfs („Der Wirtschaft, einschließlich mittelständischer Unternehmen, entstehen keine …"), bei Dual-Use der Name „Bundesamt für Wirtschaft und Ausfuhrkontrolle", das auch Energie- und Gebäudeförderung verwaltet.
 
-**Reihenfolge.** Beide Listen des Lagebilds ordnen nach der letzten Bewegung laut Quelle, neueste zuerst. Innerhalb eines Dokuments stehen Themen mit Fundstelle im Titel vor den übrigen, dann nach Häufigkeit — abzählbare Eigenschaften des Textes, keine Gewichtung.
+**Reihenfolge.** Die Listen des Lagebilds und der Gremien ordnen nach der letzten Bewegung laut Quelle, neueste zuerst. Angekündigte Termine stehen davor, der nächste oben; ein Termin von heute zählt noch dazu. Innerhalb eines Dokuments stehen Themen mit Fundstelle im Titel vor den übrigen, dann nach Häufigkeit — abzählbare Eigenschaften des Textes, keine Gewichtung.
 
 ## Die Auswahl
 
@@ -144,6 +144,8 @@ Der Workflow läuft alle 30 Minuten von 04:00 bis 20:30 UTC, also 06:00 bis 22:3
 **Was versioniert wird und was nicht.** `data/monitor.db` ist ableitbarer Zwischenstand und steht in `.gitignore`; bei halbstündlichen Läufen würde die Binärdatei das Repository um mehrere hundert MB im Jahr aufblähen. Zwischen den Läufen hält `actions/cache` sie vor. Versioniert wird nur `public/bootstrap.json`, und zwar ausschließlich, wenn der Lauf neue oder geänderte Dokumente gefunden hat. Fehlt die Datenbank — etwa nach Ablauf des Zwischenspeichers —, baut `seedFromSnapshot` sie aus `public/bootstrap.json` wieder auf, damit bereits bekannte Dokumente nicht erneut als neu gemeldet werden. Stände aus einer früheren Fassung tragen neuere Felder nicht; `asItem` ergänzt sie beim Lesen, sonst bricht ein Lauf an einem fehlenden Feld ab.
 
 **Briefings.** Jeder Lauf schreibt ein Briefing, damit das Lagebild immer den jüngsten Lauf beschreibt. Damit die Liste bei halbstündlichen Läufen nicht zuläuft, ersetzt ein Lauf ohne Änderung den vorherigen Leerlauf desselben Tages. Briefings und Änderungslog werden nach Zeit sortiert ausgeliefert — nach einem Wiederaufbau folgen die Zeilen sonst der Einfügereihenfolge.
+
+**Immer der neueste Code.** Läufe für ältere Commits können nach neueren starten: Am 13.09. begann der Lauf für einen früheren Push erst nach dem für den nächsten und lieferte dessen ältere Oberfläche wieder aus — beide Läufe meldeten Erfolg. Vor dem Bauen setzt der Schritt „Neuesten Code holen“ deshalb auf den aktuellen Stand von `main`; die Daten stammen aus dem eigenen, gerade abgeschlossenen Abruf. Hat sich `package-lock.json` geändert, wird neu installiert.
 
 Die veröffentlichte Seite ist **nur lesend**. „Stand neu laden" holt `bootstrap.json` erneut, löst aber keinen Quellenabruf aus — dafür fehlt der Server. Einen echten Lauf startet der Link „Quellenlauf auf GitHub starten" über `workflow_dispatch`. Ein Knopf, der direkt aus der Seite heraus abruft, bräuchte einen hinterlegten Zugangsschlüssel und ist auf einer öffentlichen statischen Seite deshalb ausgeschlossen. Archivieren und Versionsvergleich brauchen ebenfalls den Server und sind ausgeblendet. Sie ist außerdem **öffentlich erreichbar** — die angezeigten Dokumente sind amtlich und öffentlich, die Auswahl der Gremien ist es damit auch.
 

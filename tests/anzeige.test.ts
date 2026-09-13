@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {recency,datumsteil,suchtext,kartenDatum,datum,nurTag,anzeigeStatus,berlinTag,themenReihenfolge,quellenStand,gremienNamen} from '../src/ui/format';
+import {recency,datumsteil,suchtext,kartenDatum,listenOrdnung,datum,nurTag,anzeigeStatus,berlinTag,themenReihenfolge,quellenStand,gremienNamen} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
  url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
@@ -499,4 +499,33 @@ test('Der Export nennt dieselben Daten wie die Dokumentansicht',()=>{
  // "Ausgangsstand · Unterrichtung · Unterrichtung": Karte und Ansicht lassen einen gleichnamigen Schritt weg, der Export nicht.
  assert.ok(exp.includes("${i.step&&i.step!==i.documentType?' · '+i.step:''}"),'kein doppelter Verfahrensschritt');
  assert.ok(seite.includes("['Letzte Bewegung laut Quelle',selected.updatedAt&&!(istTermin(selected)&&selected.updatedAt===selected.publishedAt)?"),'die Ansicht nutzt dieselbe Regel');
+});
+
+// Die Listen ordneten angekündigte Termine als "neueste" umgekehrt über alles: beim Rechtsausschuss fünf Anhörungen vom
+// 14. Oktober abwärts, der nächste Termin am 23. September erst an fünfter Stelle, unter "Bewegungen der letzten 10 Tage".
+test('Listen zeigen angekündigte Termine zuerst, den nächsten oben',()=>{
+ const t=(id:string,tag:string)=>({id,documentType:'Ausschusstermin',publishedAt:`${tag}T00:00:00.000Z`,updatedAt:null,firstSeen:'2026-09-01T08:00:00.000Z'});
+ const v=(id:string,stamp:string)=>({id,documentType:'Gesetzentwurf',publishedAt:'2026-08-01T00:00:00.000Z',updatedAt:stamp,firstSeen:'2026-09-01T08:00:00.000Z'});
+ const liste=[v('alt','2026-09-09T10:00:00.000Z'),t('okt14','2026-10-14'),v('neu','2026-09-11T10:00:00.000Z'),t('sep23','2026-09-23'),t('gestern','2026-09-12'),t('heute','2026-09-13'),t('okt5','2026-10-05')];
+ assert.deepEqual([...liste].sort(listenOrdnung('2026-09-13')).map(x=>x.id),['heute','sep23','okt5','okt14','gestern','neu','alt']);
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.equal((seite.match(/\.sort\(listenOrdnung\(today\(\)\)\)/g)??[]).length,3,'Thementreffer, alle Dokumente, Gremienliste');
+ assert.ok(!seite.includes('.sort((a,b)=>recency(b).localeCompare(recency(a)))'));
+ assert.equal((seite.match(/'Angekündigte Termine zuerst, dann nach letzter Bewegung':'Nach letzter Bewegung'/g)??[]).length,2,'die Überschriften sagen es');
+});
+
+// Der Lauf für 4d13daa (angelegt 09:49) begann erst nach dem für 96312ef und lieferte um 09:53 die ältere Oberfläche
+// wieder aus. Beide meldeten Erfolg; live stand der alte Export, obwohl main den neuen enthielt.
+test('Jeder Lauf baut den neuesten Code, mit den eigenen Daten',()=>{
+ const yml=readFileSync('.github/workflows/monitor.yml','utf8');
+ const pos=(name:string)=>{const i=yml.indexOf(`- name: ${name}\n`);assert.ok(i>=0,`Schritt fehlt: ${name}`);return i;};
+ assert.ok(pos('Quellen abrufen')<pos('Neuesten Code holen'),'erst abrufen');
+ assert.ok(pos('Neuen Stand sichern')<pos('Neuesten Code holen'),'dann sichern');
+ assert.ok(pos('Neuesten Code holen')<pos('Seite bauen'),'dann den neuesten Code bauen');
+ const schritt=yml.slice(pos('Neuesten Code holen'),pos('Seite bauen'));
+ const reihe=['cp public/bootstrap.json "$RUNNER_TEMP/bootstrap-bau.json"','git fetch --quiet origin main','git reset --quiet --hard origin/main','cp "$RUNNER_TEMP/bootstrap-bau.json" public/bootstrap.json'];
+ let zuletzt=-1;for(const z of reihe){const i=schritt.indexOf(z);assert.ok(i>zuletzt,`in dieser Reihenfolge: ${z}`);zuletzt=i;}
+ assert.match(schritt,/if \[ "\$\(git hash-object package-lock\.json\)" != "\$pakete" \]; then npm ci; fi/,'geänderte Pakete werden installiert');
+ assert.ok(!/^\s+if:/m.test(schritt),'der Schritt läuft immer, nicht nur bei neuen Daten');
+ assert.ok(readFileSync('README.md','utf8').includes('**Immer der neueste Code.**'),'README');
 });
