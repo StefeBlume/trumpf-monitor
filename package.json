@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --hostname 0.0.0.0 --port 4180",
+    "dev": "node scripts/dev.mjs",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0 --port 4180",
     "test": "node --import tsx --test tests/*.test.ts",

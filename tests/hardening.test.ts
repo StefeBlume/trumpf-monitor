@@ -294,3 +294,15 @@ test('Ohne erreichbaren Titel dient das amtliche Kürzel, ohne einen Titel zu er
  assert.equal(d.documentType,'Referentenentwurf');
  assert.ok(d.url.startsWith('https://www.bundesfinanzministerium.de/'),'der Link öffnet im Browser die richtige Seite');
 });
+
+// "npm run dev" brach mit "EADDRINUSE: address already in use 0.0.0.0:4180" ab, während die App aus einem
+// anderen Terminal-Tab längst lief und antwortete - zweimal hintereinander für dieselbe Person.
+test('npm run dev erkennt eine bereits laufende App',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const paket=JSON.parse(readFileSync('package.json','utf8'));
+ assert.equal(paket.scripts.dev,'node scripts/dev.mjs','der Start läuft über die Portprüfung');
+ const skript=readFileSync('scripts/dev.mjs','utf8');
+ assert.match(skript,/EADDRINUSE/,'ein belegter Port wird erkannt');
+ assert.match(skript,/Die App läuft bereits: http:\/\/localhost:\$\{PORT\}/,'und die Adresse genannt');
+ assert.match(skript,/'--port', String\(PORT\)/,'gestartet wird auf demselben Port');
+});

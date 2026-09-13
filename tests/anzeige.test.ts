@@ -362,3 +362,14 @@ test('Als Nächstes zeigt jeden gezählten Termin oder einen Weg dorthin',()=>{
  assert.ok(seite.includes('{upcoming.length>6&&<button'),'ab dem siebten Termin erscheint der Knopf');
  assert.ok(seite.includes('`Alle ${upcoming.length} Termine zeigen`'),'der Knopf nennt dieselbe Zahl wie die Überschrift');
 });
+
+// "Recht · federführend" stand auf Anhörungen, "Federführend" im Gremienbereich einer Tagesordnung. Federführung
+// ist die Verantwortung für eine überwiesene Vorlage; eine Sitzung veranstaltet der Ausschuss. Live trugen alle
+// 7 Anhörungen und 4 Tagesordnungen die Angabe.
+test('Termine behaupten keine Federführung',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes("{lead.short}{istTermin(item)?'':' · federführend'}"),'die Karte');
+ assert.ok(seite.includes("{istTermin(selected)?'Veranstaltet die Sitzung':'Federführend'}"),'der Gremienbereich');
+ assert.ok(seite.includes("${istTermin(i)?'Ausschuss':'Federführend'}"),'der Export');
+ assert.ok(!seite.includes('{lead.short} · federführend</span>'),'keine unbedingte Federführung auf Karten');
+});
