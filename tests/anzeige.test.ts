@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {recency,datumsteil,suchtext,bewegungswort,datum,nurTag,anzeigeStatus,berlinTag} from '../src/ui/format';
+import {recency,datumsteil,suchtext,bewegungswort,datum,nurTag,anzeigeStatus,berlinTag,themenReihenfolge} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
  url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
@@ -411,4 +411,19 @@ test('Tage werden nach Berliner Kalender verglichen',()=>{
  assert.equal(datumsteil(nacht,s=>datum(s)).eigenes,null,'kein doppeltes Datum auf der Karte');
  assert.equal(bewegungswort('2026-09-12T22:30:00Z','2026-09-12'),'nächster Termin','in Berlin schon der 13.');
  assert.ok(readFileSync('pages/index.tsx','utf8').includes('(!after||berlinTag(recency(i))>=after)'),'der Filter nach letzter Bewegung');
+});
+
+// Unter einem Themenfilter belegte die Themenkarte ihren Fund mit dem Zitat des ersten gespeicherten Themas.
+// Live zeigten 69 von 143 gefilterten Karten einen Satz zu einem anderen Thema, unter "Halbleiter & EUV" 6 von 7.
+test('Unter einem Themenfilter belegt die Karte das gewählte Thema',()=>{
+ const ms=[{topic:'standort',snippet:'Energiepreise'},{topic:'dualuse',snippet:'Ausfuhrliste'},{topic:'laser',snippet:'Laser'}];
+ assert.equal(themenReihenfolge(ms,'dualuse')[0].snippet,'Ausfuhrliste','das Zitat gehört zum Filter');
+ assert.deepEqual(themenReihenfolge(ms,'dualuse').map(m=>m.topic),['dualuse','standort','laser'],'die übrigen behalten ihre Reihenfolge');
+ assert.deepEqual(themenReihenfolge(ms,'').map(m=>m.topic),['standort','dualuse','laser'],'ohne Filter unverändert');
+ assert.deepEqual(themenReihenfolge(ms,'ki').map(m=>m.topic),['standort','dualuse','laser'],'ein fremdes Thema ändert nichts');
+ assert.deepEqual(ms.map(m=>m.topic),['standort','dualuse','laser'],'der Bestand selbst wird nicht umsortiert');
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes('const m=themenReihenfolge(topicsOf(item),thema);'),'die Karte');
+ assert.equal((seite.match(/<TopicCard /g)??[]).length,(seite.match(/<TopicCard [^\n]*thema=\{topic\}/g)??[]).length,'jeder Aufruf reicht den Filter durch');
+ assert.ok(seite.includes('themenReihenfolge(topicsOf(selected),topic).map('),'die Dokumentansicht ordnet gleich');
 });

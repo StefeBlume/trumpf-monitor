@@ -27,6 +27,13 @@ export function suchtext(i:Item,gremien:string[]):string{
   .filter((x):x is string=>typeof x==='string'&&x.length>0).join(' ').toLowerCase();
 }
 
+// Unter einem Themenfilter steht das gewaehlte Thema vorn. Die Themenkarte belegt ihren Fund mit dem Zitat des
+// ersten Themas; ohne diese Ordnung zeigten live 69 von 143 gefilterten Karten einen Satz zu einem anderen Thema,
+// unter "Export & Dual-Use" zehnmal einen zum Wirtschaftsstandort. Sonst bleibt die Reihenfolge, wie sie ist.
+export function themenReihenfolge<T extends {topic:string}>(ms:T[],thema?:string|null):T[]{
+ return thema?[...ms].sort((a,b)=>Number(b.topic===thema)-Number(a.topic===thema)):ms;
+}
+
 // Ausschuesse kuendigen Anhoerungen im Voraus an. Auf der Karte des Rechtsausschusses stand deshalb
 // "zuletzt 14. Okt. 2026", waehrend heute der 12. September war - das liest sich wie ein Datumsfehler,
 // obwohl der Termin stimmt. Verglichen wird nach Berliner Kalendertag, nicht nach Uhrzeit: eine
