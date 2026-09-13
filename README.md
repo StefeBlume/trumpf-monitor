@@ -40,7 +40,7 @@ Auswahl und Regel ändern: `COMMITTEES` und `MINISTRIES` in `src/model.ts`. Die 
 
 | Quelle | Abruf | Filter |
 |---|---|---|
-| DIP `vorgangsposition` | API | `ueberweisung[].ausschuss_kuerzel` gegen die Auswahl, `leadOnly` beachtet |
+| DIP `vorgangsposition` | API | `ueberweisung[].ausschuss_kuerzel` gegen die Auswahl, `leadOnly` beachtet; bei gesammelten Überweisungen (§ 80 Abs. 3, § 92 GO-BT) Nummer und PDF der eigenen Drucksache aus dem Vorgang, nicht die der Sammel-Unterrichtung |
 | DIP `drucksache-text` | API | Volltext aller Drucksachen gegen das Themenraster; zusätzlich alles aus den ausgewählten Ressorts |
 | Anhörungen und öffentliche Sitzungen | Terminlisten der Ausschüsse | je ausgewähltem Bundestagsausschuss eine eigene amtliche Liste; 10 Einträge je Abruf, geblättert wird, solange eine volle Seite noch Termine der letzten 30 Tage führt (höchstens 5 Seiten) |
 | Tagesordnungen | ausschussübergreifende Liste | Ausschussspalte gegen die Bundestagsauswahl; auch hier 10 Einträge je Abruf und dieselbe Blätterregel |

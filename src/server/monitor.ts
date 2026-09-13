@@ -1,7 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
-import {db} from './db';import {configuredSources,ingest,lookbackStart,bmfAngaben} from './connectors';import {contentHash,dipUrl,sitzungstag} from './parsing';import {TOPICS} from './topics';import {rasterFingerabdruck} from './raster';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
+import {db} from './db';import {configuredSources,ingest,lookbackStart,bmfAngaben,SAMMELUEBERWEISUNG} from './connectors';import {contentHash,dipUrl,sitzungstag} from './parsing';import {TOPICS} from './topics';import {rasterFingerabdruck} from './raster';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
 // Stände aus einer früheren Fassung tragen neuere Felder noch nicht. Jeder Leser bekommt deshalb
 // vollständige Listen, statt an einem fehlenden Feld zu scheitern - genau daran brach ein Lauf ab.
 // Die kurzen DIP-Adressen aus frueheren Fassungen fuehren auf "Seite nicht gefunden". Ein Eintrag
@@ -34,7 +34,8 @@ function sammelpapiere(items:Pick<DocumentInput,'paperKey'|'url'>[]):Set<string>
 // Logik 7: Ueberweisungen vermerken nur mitberatende Querschnittsausschuesse. Der volle Abruf traegt das Feld
 // im ganzen Bestand nach; sonst fehlte der Hinweis bei allem, was sich an der Quelle nicht mehr bewegt.
 // Logik 8: Belege werden an Wortgrenzen geschnitten. Sie entstehen beim Eingang und stehen nicht im Hash.
-export function erfassungsstand(topics:unknown,logik=8):string{
+// Logik 9: Gesammelte Ueberweisungen tragen die eigene Drucksache der Vorlage statt der Sammel-Unterrichtung.
+export function erfassungsstand(topics:unknown,logik=9):string{
  return `${logik}:${rasterFingerabdruck(topics)}`;
 }
 export const ERFASSUNGSSTAND=erfassungsstand(TOPICS);
@@ -173,7 +174,9 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  // Eingearbeitete Angaben der anderen Quelle gehoeren nicht zum gelieferten Inhalt: Ausschusspositionen
  // tragen nie Ressorts, Volltexttreffer nie Ausschuesse. Ohne diese Trennung galt die zusammengefuehrte
  // Umsatzsteuerschluesselzahlen-Verordnung als geaendert, obwohl kein Feld anders war.
- const eigenerStand=(i:Item):DocumentInput=>source.kind==='committee-dip'?{...i,ministries:[]}:source.kind==='fulltext-dip'?{...i,committees:[],lead:null}:i;
+ // Bei gesammelten Ueberweisungen zeigte die App die Nummer der Sammel-Unterrichtung. Die berichtigte eigene Drucksache ist
+ // keine Bewegung der Quelle - sonst galten 19 unveraenderte Vorlagen auf einen Schlag als geaendert.
+ const eigenerStand=(i:Item):DocumentInput=>source.kind==='committee-dip'?{...i,ministries:[],...(SAMMELUEBERWEISUNG.test(i.step??'')?{documentNumber:doc.documentNumber,pdfUrl:doc.pdfUrl}:{})}:source.kind==='fulltext-dip'?{...i,committees:[],lead:null}:i;
  const gleich=!!old&&(hash===old.hash||hash===contentHash(eigenerStand(old)));
  const change=old?(gleich?'unchanged':'changed'):(baseline?'baseline':'new');
  // Gespeichert wird die Art der letzten echten Aenderung; wann sie war, steht in changedAt. Mit "unchanged" bei

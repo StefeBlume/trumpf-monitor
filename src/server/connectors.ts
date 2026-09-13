@@ -81,9 +81,43 @@ export function mapCommitteePosition(d:any):DocumentInput|null{
  committees:[...new Set(referrals.map(r=>r.id))],lead:referrals.find(r=>r.lead)?.id??null,nurMitberatend,ministries:[],topics:scanTopics(clean(d.titel)),
  originator:(Array.isArray(f.urheber)?f.urheber:[]).map((u:unknown)=>clean(u)).join(', ')||null};
 }
+// Gesammelte Ueberweisungen (§ 80 Abs. 3 und § 92 GO-BT) verweisen auf eine Sammel-Unterrichtung, die viele Vorlagen auflistet.
+// Am 13.09. trugen 19 Eintraege deren Nummer 21/7984, und "Amtliches PDF oeffnen" fuehrte bei allen zur selben Liste. Jede
+// Vorlage hat aber eine eigene Drucksache - der Jahresbericht 2025 die 21/7050 -, als weitere Position im selben Vorgang.
+// Gingen Berichte an beide Haeuser, gilt die Drucksache des Hauses, das ueberwiesen hat.
+export const SAMMELUEBERWEISUNG=/^Überweisung gemäß § (?:80|92)\b/;
+export function eigeneDrucksache(positionen:any[],herausgeber:unknown):{nummer:string;pdf:string|null;herausgeber:string}|null{
+ const kandidaten=(Array.isArray(positionen)?positionen:[]).filter(p=>p?.fundstelle?.dokumentart==='Drucksache'&&typeof p.fundstelle.dokumentnummer==='string'
+  &&!SAMMELUEBERWEISUNG.test(String(p?.vorgangsposition??''))).sort((a,b)=>String(a.datum??'').localeCompare(String(b.datum??'')));
+ const p=kandidaten.find(x=>x.fundstelle.herausgeber===herausgeber)??kandidaten[0];
+ if(!p)return null;
+ const f=p.fundstelle;
+ return {nummer:clean(f.dokumentnummer),pdf:typeof f.pdf_url==='string'&&officialURL(f.pdf_url)?f.pdf_url:null,herausgeber:String(f.herausgeber??'')};
+}
 export async function committeeDocuments(since:string):Promise<DocumentInput[]>{
- const docs:DocumentInput[]=[];
- await dipPages('vorgangsposition',since,page=>{for(const d of page){const m=mapCommitteePosition(d);if(m)docs.push(m);}});
+ const docs:DocumentInput[]=[];const roh:any[]=[];
+ await dipPages('vorgangsposition',since,page=>{for(const d of page){const m=mapCommitteePosition(d);if(m){docs.push(m);roh.push(d);}}});
+ const jeVorgang=new Map<string,any[]|null>();
+ for(let k=0;k<docs.length;k++){
+  const d=roh[k],m=docs[k];
+  if(!SAMMELUEBERWEISUNG.test(m.step??'')||!d?.vorgang_id)continue;
+  const id=String(d.vorgang_id);
+  if(!jeVorgang.has(id)){
+   try{
+    const u=new URL('https://search.dip.bundestag.de/api/v1/vorgangsposition');
+    u.searchParams.set('f.vorgang',id);u.searchParams.set('format','json');
+    const p=JSON.parse(await fetchOfficial(u.href,{Authorization:`ApiKey ${process.env.DIP_API_KEY}`}));
+    jeVorgang.set(id,Array.isArray(p.documents)?p.documents:null);
+   }catch{jeVorgang.set(id,null);}
+  }
+  const positionen=jeVorgang.get(id);
+  // Scheitert die Abfrage, bleibt die Position, wie sie ist; der naechste Lauf berichtigt sie ohne Aenderungsmeldung.
+  if(!positionen)continue;
+  const eigene=eigeneDrucksache(positionen,d?.fundstelle?.herausgeber);
+  m.documentNumber=eigene?.nummer??null;
+  m.pdfUrl=eigene?.pdf??null;
+  m.paperKey=eigene?papierschluessel(eigene.herausgeber,'Drucksache',eigene.nummer):null;
+ }
  return docs;
 }
 // Volltextsuche ueber alle Drucksachen der Wahlperiode. Behalten wird, was eines der TRUMPF-Themen

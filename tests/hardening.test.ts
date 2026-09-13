@@ -320,6 +320,33 @@ test('Die Tagesordnungsliste wird über die erste Seite hinaus gelesen',async()=
  }finally{globalThis.fetch=echt;}
 });
 
+import {committeeDocuments,eigeneDrucksache} from '../src/server/connectors';
+
+// 19 Einträge trugen die Nummer der Sammel-Unterrichtung 21/7984, "Amtliches PDF öffnen" führte zur Sammelliste. Laut DIP hat
+// der Jahresbericht 2025 die eigene Drucksache 21/7050; 6 Berichte gingen an beide Häuser (etwa BT 21/7150 und BR 419/26).
+test('Gesammelte Überweisungen zeigen die eigene Drucksache der Vorlage',async()=>{
+ const pdf=(n:string)=>`https://dserver.bundestag.de/btd/21/${n.slice(3,6)}/21${n.slice(3)}.pdf`;
+ const pos=(id:string,schritt:string,nr:string,hg='BT',datum='2026-07-02')=>({id,vorgangsposition:schritt,datum,fundstelle:{dokumentart:'Drucksache',herausgeber:hg,dokumentnummer:nr,drucksachetyp:'Unterrichtung',pdf_url:hg==='BT'?pdf(nr):`https://dserver.bundestag.de/brd/2026/0${nr.split('/')[0]}-26.pdf`}});
+ const S='Überweisung gemäß § 80 Abs. 3 Geschäftsordnung BT';
+ assert.deepEqual(eigeneDrucksache([pos('a','Unterrichtung','21/7050'),pos('b',S,'21/7984','BT','2026-09-10')],'BT'),{nummer:'21/7050',pdf:pdf('21/7050'),herausgeber:'BT'});
+ assert.equal(eigeneDrucksache([pos('a','Unterrichtung','419/26','BR','2026-06-01'),pos('b','Unterrichtung','21/7150','BT','2026-06-03'),pos('c',S,'21/7984')],'BT')?.nummer,'21/7150','die Drucksache des überweisenden Hauses');
+ assert.equal(eigeneDrucksache([pos('c',S,'21/7984')],'BT'),null,'ohne eigene Drucksache keine erfundene');
+ // Der ganze Weg: Abruf, eine Nachfrage je Vorgang, berichtigte Angaben.
+ const sammel={id:'p2',vorgang_id:'337282',titel:'Jahresbericht 2025',vorgangsposition:S,vorgangstyp:'Bericht, Gutachten, Programm',datum:'2026-09-10',aktualisiert:new Date().toISOString(),
+  ueberweisung:[{ausschuss_kuerzel:'VgA',federfuehrung:false}],fundstelle:{dokumentart:'Drucksache',herausgeber:'BT',dokumentnummer:'21/7984',drucksachetyp:'Unterrichtung',pdf_url:pdf('21/7984')}};
+ const echt=globalThis.fetch,schluessel=process.env.DIP_API_KEY;const nachfragen:string[]=[];
+ process.env.DIP_API_KEY='test';
+ globalThis.fetch=(async(u:any)=>{const url=new URL(String(u));const json=(x:unknown)=>new Response(JSON.stringify(x),{status:200,headers:{'content-type':'application/json'}});
+  if(url.searchParams.get('f.vorgang')){nachfragen.push(url.searchParams.get('f.vorgang')!);return json({documents:[pos('p1','Unterrichtung','21/7050'),sammel]});}
+  return url.searchParams.get('cursor')?json({documents:[],cursor:'c'}):json({documents:[sammel,{...sammel,id:'p3'}],cursor:'c'});}) as typeof fetch;
+ try{
+  const docs=await committeeDocuments(new Date(Date.now()-86400000).toISOString());
+  assert.equal(docs.length,2);
+  for(const d of docs)assert.deepEqual([d.documentNumber,d.pdfUrl,d.paperKey],['21/7050',pdf('21/7050'),'BT-Drucksache 21/7050']);
+  assert.deepEqual(nachfragen,['337282'],'eine Nachfrage je Vorgang');
+ }finally{globalThis.fetch=echt;if(schluessel===undefined)delete process.env.DIP_API_KEY;else process.env.DIP_API_KEY=schluessel;}
+});
+
 import {fetchTimeoutFor} from '../src/server/connectors';
 
 test('Das Zeitlimit wächst mit der erlaubten Antwortgröße',()=>{

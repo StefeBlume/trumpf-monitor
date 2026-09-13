@@ -392,6 +392,25 @@ test('Die berichtigten BMF- und Tagesordnungsangaben erzeugen keine Scheinänder
  assert.deepEqual([t.originator,t.version],['Verteidigungsausschuss',1]);
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
+// 19 Einträge trugen die Nummer der Sammel-Unterrichtung 21/7984. Die berichtigte eigene Drucksache ist keine Bewegung der
+// Quelle; ohne Ausnahme im Vergleich hätten alle 19 auf einen Schlag als geändert gegolten.
+test('Die berichtigte Drucksache einer gesammelten Überweisung ist keine Änderung',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-sammel-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const ausschuss:Source={id:'dip-committees',name:'A',institution:'Bundestag',url:doc.url,kind:'committee-dip',note:'Fixture'};
+ const heute=new Date().toISOString();
+ const vorher={...doc,externalId:'s1',title:'Jahresbericht 2025',step:'Überweisung gemäß § 80 Abs. 3 Geschäftsordnung BT',documentType:'Unterrichtung',publishedAt:heute,updatedAt:heute,
+  documentNumber:'21/7984',pdfUrl:'https://dserver.bundestag.de/btd/21/079/2107984.pdf',paperKey:'BT-Drucksache 21/7984'};
+ try{
+ await runMonitor({sources:[ausschuss],fetcher:async()=>[vorher]});
+ const zweiter=await runMonitor({sources:[ausschuss],fetcher:async()=>[{...vorher,documentNumber:'21/7050',pdfUrl:'https://dserver.bundestag.de/btd/21/070/2107050.pdf',paperKey:'BT-Drucksache 21/7050'}]});
+ assert.equal(zweiter?.items.length,0,'keine Änderungsmeldung');
+ const i=(await dashboard()).items[0];
+ assert.deepEqual([i.documentNumber,i.pdfUrl,i.paperKey,i.version],['21/7050','https://dserver.bundestag.de/btd/21/070/2107050.pdf','BT-Drucksache 21/7050',1]);
+ // Eine echte Änderung anderer Felder bleibt eine Änderung.
+ const dritter=await runMonitor({sources:[ausschuss],fetcher:async()=>[{...vorher,title:'Jahresbericht 2025 (berichtigt)',documentNumber:'21/7050',pdfUrl:'https://dserver.bundestag.de/btd/21/070/2107050.pdf',paperKey:'BT-Drucksache 21/7050'}]});
+ assert.equal(dritter?.items[0]?.change,'changed');
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
 // Ein Stand aus einer frueheren Fassung traegt neuere Felder nicht. In CI kam die Datenbank aus dem
 // Zwischenspeicher und der Lauf brach beim Sortieren an einem fehlenden topics-Feld ab.
 test('Stände aus einer früheren Fassung lassen den Lauf nicht abbrechen',async()=>{
@@ -716,7 +735,7 @@ test('Jede Änderung des Themenrasters holt das Fenster neu',()=>{
  assert.notEqual(erfassungsstand(mit('halbleiter',t=>({...t,terms:[...t.terms,'extra']}))),ERFASSUNGSSTAND,'ein neuer Begriff');
  assert.notEqual(erfassungsstand(mit('dualuse',t=>({...t,ignore:[/anders/gi]}))),ERFASSUNGSSTAND,'eine geänderte Ausnahme');
  assert.notEqual(erfassungsstand(mit('ki',t=>({...t,context:{...t.context,naehe:undefined}}))),ERFASSUNGSSTAND,'eine geänderte Kontextregel');
- assert.notEqual(erfassungsstand(TOPICS,9),ERFASSUNGSSTAND,'eine neue Zuordnungslogik');
+ assert.notEqual(erfassungsstand(TOPICS,10),ERFASSUNGSSTAND,'eine neue Zuordnungslogik');
  assert.equal(erfassungsstand(TOPICS),ERFASSUNGSSTAND,'dasselbe Raster ergibt denselben Stand');
 });
 
