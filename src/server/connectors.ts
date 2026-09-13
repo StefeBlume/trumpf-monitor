@@ -185,7 +185,7 @@ export async function ingest(source:Source,since:string,warn?:(note:string)=>voi
  throw new Error('Manuelle Ergänzung erforderlich');
 }
 
-// Gesetzesvorhaben des BMF ueber die Sitemap: sie ist in der robots.txt ausdruecklich fuer Maschinen
+// Gesetze und Verordnungen des BMF ueber die Sitemap: sie ist in der robots.txt ausdruecklich fuer Maschinen
 // ausgewiesen und liefert Adresse und Aenderungsdatum.
 //
 // Den richtigen Titel traegt nur die Inhaltsseite, und die ist aus dem Zeitplan heraus nicht
