@@ -1,7 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
-import {db} from './db';import {configuredSources,ingest,lookbackStart} from './connectors';import {contentHash,dipUrl,sitzungstag} from './parsing';import {TOPICS} from './topics';import {rasterFingerabdruck} from './raster';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
+import {db} from './db';import {configuredSources,ingest,lookbackStart,bmfAngaben} from './connectors';import {contentHash,dipUrl,sitzungstag} from './parsing';import {TOPICS} from './topics';import {rasterFingerabdruck} from './raster';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
 // Stände aus einer früheren Fassung tragen neuere Felder noch nicht. Jeder Leser bekommt deshalb
 // vollständige Listen, statt an einem fehlenden Feld zu scheitern - genau daran brach ein Lauf ab.
 // Die kurzen DIP-Adressen aus frueheren Fassungen fuehren auf "Seite nicht gefunden". Ein Eintrag
@@ -55,6 +55,12 @@ export function asItem(raw:unknown):Item{
   // Feedmeldungen hiessen frueher "RSS-Meldung". Der Typ steckt im Hash; ohne Umbenennung beim Lesen galt jede
   // gespeicherte Meldung bei ihrer naechsten Lieferung als "Behördenmeldung" als geaendert.
   documentType:i.documentType==='RSS-Meldung'?'Behördenmeldung':(i.documentType??''),
+  // BMF-Eintraege trugen "Gesetzesvorhaben …", "Referentenentwurf" und "Vorbereitung im Ressort" - nichts davon nennt die
+  // Sitemap. Tagesordnungen hatten keinen Urheber, obwohl die Liste den Ausschuss nennt. Titel, Typ, Schritt und Urheber
+  // stecken im Hash: ohne Umstellung beim Lesen galten diese Eintraege bei ihrer naechsten Lieferung als geaendert.
+  ...(i.documentType==='Referentenentwurf'&&i.step==='Vorbereitung im Ressort'&&typeof i.url==='string'&&bmfAngaben(i.url)
+   ?{...bmfAngaben(i.url)!,step:null}:{}),
+  originator:i.originator??(i.documentType==='Tagesordnung'&&i.lead?committeeById(i.lead)?.name??null:null),
   archived:i.archived===true};
 }
 // Briefings tragen ganze Dokumente mit. Zwoelf Briefings mit je zwoelf Eintraegen genuegen fuer den

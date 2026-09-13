@@ -367,6 +367,31 @@ test('Die Umbenennung der Feedmeldungen erzeugt keine Scheinänderung',async()=>
  assert.equal(i.version,1);
  }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
 
+// BMF-Einträge verloren "Gesetzesvorhaben", "Referentenentwurf" und "Vorbereitung im Ressort", Tagesordnungen bekamen ihren
+// Ausschuss als Urheber. Titel, Typ, Schritt und Urheber stecken im Hash - ohne Umstellung beim Lesen galten diese Einträge
+// bei ihrer nächsten Lieferung als geändert.
+test('Die berichtigten BMF- und Tagesordnungsangaben erzeugen keine Scheinänderung',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'policy-bmf-'));process.env.DATABASE_URL='file:'+join(dir,'test.db');
+ const bmf:Source={id:'bmf-vorhaben',name:'B',institution:'BMF',url:'https://www.bundesfinanzministerium.de/',kind:'ministry-drafts',note:'Fixture'};
+ const ag:Source={id:'bt-agenda',name:'T',institution:'Bundestag',url:'https://www.bundestag.de/',kind:'committee-agenda',note:'Fixture'};
+ const heute=new Date().toISOString();
+ const url='https://www.bundesfinanzministerium.de/Content/DE/Gesetzestexte/Gesetze_Gesetzesvorhaben/Abteilungen/Abteilung_IV/21_Legislaturperiode/2026-03-23-ApO/0-Verordnung.html';
+ const alt={...doc,externalId:url,url,title:'Gesetzesvorhaben ApO',documentType:'Referentenentwurf',step:'Vorbereitung im Ressort',procedure:null,documentNumber:null,
+  committees:[],lead:null,ministries:['bmf'],originator:'Bundesministerium der Finanzen',publishedAt:heute,updatedAt:heute,topics:[]};
+ const to={...doc,externalId:'https://www.bundestag.de/resource/blob/1/to.pdf',url:'https://www.bundestag.de/resource/blob/1/to.pdf',title:'Tagesordnung der 33. Sitzung',
+  documentType:'Tagesordnung',step:'Sitzungstermin',procedure:null,documentNumber:null,committees:['vt'],lead:'vt',originator:null,publishedAt:heute,updatedAt:heute,topics:[]};
+ try{
+ await runMonitor({sources:[bmf,ag],fetcher:async s=>s.id==='bmf-vorhaben'?[alt]:[to]});
+ const zweiter=await runMonitor({sources:[bmf,ag],fetcher:async s=>s.id==='bmf-vorhaben'
+  ?[{...alt,title:'Verordnung ApO',documentType:'Verordnung',step:null}]
+  :[{...to,originator:'Verteidigungsausschuss'}]});
+ assert.equal(zweiter?.items.length,0,'beide unverändert');
+ const items=(await dashboard()).items;
+ const b=items.find(i=>i.sourceId==='bmf-vorhaben')!,t=items.find(i=>i.sourceId==='bt-agenda')!;
+ assert.deepEqual([b.title,b.documentType,b.step,b.version],['Verordnung ApO','Verordnung',null,1]);
+ assert.deepEqual([t.originator,t.version],['Verteidigungsausschuss',1]);
+ }finally{await resetDBForTests();delete process.env.DATABASE_URL;rmSync(dir,{recursive:true,force:true});}});
+
 // Ein Stand aus einer frueheren Fassung traegt neuere Felder nicht. In CI kam die Datenbank aus dem
 // Zwischenspeicher und der Lauf brach beim Sortieren an einem fehlenden topics-Feld ab.
 test('Stände aus einer früheren Fassung lassen den Lauf nicht abbrechen',async()=>{

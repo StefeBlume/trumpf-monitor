@@ -133,7 +133,7 @@ export async function agendaDocuments():Promise<DocumentInput[]>{
  return parseAgendaTable(await fetchOfficial(url),url).flatMap(row=>{
  const id=matchCommitteeName(row.committee);
  return id?[{externalId:row.url,title:row.title,url:row.url,text:'',publishedAt:sitzungstag(row.title)??row.date,updatedAt:row.date,topics:scanTopics(row.title),documentType:'Tagesordnung',step:'Sitzungstermin',
- procedure:null,documentNumber:null,pdfUrl:row.url.endsWith('.pdf')?row.url:null,committees:[id],lead:id,ministries:[],originator:null}]:[];
+ procedure:null,documentNumber:null,pdfUrl:row.url.endsWith('.pdf')?row.url:null,committees:[id],lead:id,ministries:[],originator:COMMITTEES.find(c=>c.id===id)?.name??null}]:[];
  });
 }
 // Anhoerungen und oeffentliche Sitzungen je ausgewaehltem Ausschuss. Eine leere Liste ist ein Fehler:
@@ -199,6 +199,19 @@ export function bmfLabel(slug:string):string{
  return slug.replace(/^\d{4}-\d{2}-\d{2}-/,'').replace(/^G-/,'').replace(/-/g,' ')
   .replace(/Aenderung/g,'Änderung').replace(/Ueber/g,'Über').replace(/ae/g,'ä').replace(/\s+/g,' ').trim();
 }
+// Die Sitemap nennt Adresse und Aenderungsdatum; der letzte Pfadteil nennt die Art der Seite - 38 Vorhaben "0-Gesetz.html",
+// 10 "0-Verordnung.html". Vorher hiess jedes "Gesetzesvorhaben", galt als "Referentenentwurf" und stand im Schritt
+// "Vorbereitung im Ressort": drei Angaben, die die Quelle nicht macht. Die Verordnung ApO hiess so "Gesetzesvorhaben ApO".
+export function bmfAngaben(loc:string):{title:string;documentType:string}|null{
+ const m=/\/\d{4}-\d{2}-\d{2}-([^/]+)\/([^/]*)$/.exec(loc);
+ if(!m)return null;
+ const bezeichnung=bmfLabel(m[1]);
+ if(!bezeichnung)return null;
+ const art=/^0-Verordnung\.html$/.test(m[2])?'Verordnung':/^0-Gesetz\.html$/.test(m[2])?'Gesetz':'Gesetze und Gesetzesvorhaben';
+ // Das Typwort nur, wo das Kuerzel es nicht schon traegt: "Fondrisikobegrenzungsgesetz", "2 VO Änderung KassenSichV".
+ const traegtArt=/gesetz|verordnung|(^|\s)VO(\s|$)/i.test(bezeichnung)||art==='Gesetze und Gesetzesvorhaben';
+ return {title:traegtArt?bezeichnung:`${art} ${bezeichnung}`,documentType:art};
+}
 export function parseMinistryDrafts(xml:string):DocumentInput[]{
  const out:DocumentInput[]=[];
  const paare=[...xml.matchAll(/<url>\s*<loc>([^<]+)<\/loc>\s*(?:<lastmod>([^<]*)<\/lastmod>)?/g)];
@@ -208,10 +221,11 @@ export function parseMinistryDrafts(xml:string):DocumentInput[]{
   if(!m)continue;
   const [,datum,slug]=m;
   const bezeichnung=bmfLabel(slug);
-  if(!bezeichnung)continue;
-  out.push({externalId:loc,title:`Gesetzesvorhaben ${bezeichnung}`,url:loc,text:'',
+  const angaben=bmfAngaben(loc);
+  if(!bezeichnung||!angaben)continue;
+  out.push({externalId:loc,title:angaben.title,url:loc,text:'',
    publishedAt:iso(datum),updatedAt:iso(lastmod)??iso(datum),topics:scanTopics(bezeichnung),
-   documentType:'Referentenentwurf',step:'Vorbereitung im Ressort',procedure:null,documentNumber:null,pdfUrl:null,
+   documentType:angaben.documentType,step:null,procedure:null,documentNumber:null,pdfUrl:null,
    committees:[],lead:null,ministries:['bmf'],originator:'Bundesministerium der Finanzen'});
  }
  // Alle Eintraege teilen sich eine Adresse pro Vorhaben; Dubletten aus mehreren Unterseiten entfernen.

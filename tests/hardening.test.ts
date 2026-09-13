@@ -204,7 +204,8 @@ test('Aus der BMF-Sitemap werden nur amtliche Gesetzesvorhaben übernommen',()=>
  const d=parseMinistryDrafts(sitemap);
  assert.equal(d.length,2,'Pressemitteilung und fremde Domain fallen weg');
  const est=d.find(x=>x.title.includes('EStReformG'))!;
- assert.equal(est.documentType,'Referentenentwurf');
+ assert.equal(est.documentType,'Gesetz','der Seitentyp aus der Adresse');
+ assert.equal(est.step,null,'einen Verfahrensschritt nennt die Sitemap nicht');
  assert.deepEqual(est.ministries,['bmf']);
  // Zwei Daten: wann entworfen (aus der Adresse) und wann zuletzt geändert (aus der Sitemap).
  assert.equal(est.publishedAt?.slice(0,10),'2026-08-18');
@@ -224,6 +225,21 @@ test('Eine Sitemap ohne Gesetzesvorhaben gilt als Formatbruch',()=>{
  // Dieselbe Adresse aus mehreren Unterseiten wird nur einmal geführt.
  const doppelt=parseMinistryDrafts(sitemap+sitemap);
  assert.equal(doppelt.length,2);
+});
+
+// Die Sitemap führt 38 Gesetze und 10 Verordnungen. Jedes hieß "Gesetzesvorhaben", galt als "Referentenentwurf" und stand
+// im Schritt "Vorbereitung im Ressort" - die Verordnung ApO trug so den Titel "Gesetzesvorhaben ApO".
+test('BMF-Einträge übernehmen nur, was die Adresse sagt',()=>{
+ const url=(slug:string,seite:string)=>`https://www.bundesfinanzministerium.de/Content/DE/Gesetzestexte/Gesetze_Gesetzesvorhaben/Abteilungen/Abteilung_IV/21_Legislaturperiode/${slug}/${seite}`;
+ const xml=`<urlset>${[['2026-03-23-ApO','0-Verordnung.html'],['2025-10-29-Fondrisikobegrenzungsgesetz','0-Gesetz.html'],['2025-11-05-2-VO-Aenderung-KassenSichV','0-Verordnung.html'],['2026-04-15-LKEG','0-Gesetz.html']]
+  .map(([slug,seite])=>`<url><loc>${url(slug,seite)}</loc><lastmod>2026-09-10</lastmod></url>`).join('')}</urlset>`;
+ const d=parseMinistryDrafts(xml);
+ const nach=(t:string)=>d.find(x=>x.url.includes(t))!;
+ assert.deepEqual([nach('ApO').title,nach('ApO').documentType],['Verordnung ApO','Verordnung']);
+ assert.deepEqual([nach('Fondrisiko').title,nach('Fondrisiko').documentType],['Fondrisikobegrenzungsgesetz','Gesetz'],'kein doppeltes Typwort');
+ assert.deepEqual([nach('KassenSichV').title,nach('KassenSichV').documentType],['2 VO Änderung KassenSichV','Verordnung']);
+ assert.deepEqual([nach('LKEG').title,nach('LKEG').documentType],['Gesetz LKEG','Gesetz']);
+ for(const x of d){assert.equal(x.step,null);assert.ok(!/Referentenentwurf|Gesetzesvorhaben/.test(x.title+x.documentType),x.title);}
 });
 
 import {fetchTimeoutFor} from '../src/server/connectors';
@@ -290,8 +306,8 @@ test('Eine Weiterleitung auf einen Bot-Schutz wird abgewiesen, nicht umgangen',a
 test('Ohne erreichbaren Titel dient das amtliche Kürzel, ohne einen Titel zu erfinden',()=>{
  const sitemap='<urlset><url><loc>https://www.bundesfinanzministerium.de/Content/DE/Gesetzestexte/Gesetze_Gesetzesvorhaben/Abteilungen/Abteilung_IV/21_Legislaturperiode/2026-08-18-EStReformG-2027/0-Gesetz.html</loc><lastmod>2026-08-18</lastmod></url></urlset>';
  const [d]=parseMinistryDrafts(sitemap);
- assert.equal(d.title,'Gesetzesvorhaben EStReformG 2027');
- assert.equal(d.documentType,'Referentenentwurf');
+ assert.equal(d.title,'Gesetz EStReformG 2027');
+ assert.equal(d.documentType,'Gesetz');
  assert.ok(d.url.startsWith('https://www.bundesfinanzministerium.de/'),'der Link öffnet im Browser die richtige Seite');
 });
 

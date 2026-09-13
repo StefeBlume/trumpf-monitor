@@ -44,7 +44,7 @@ Auswahl und Regel ändern: `COMMITTEES` und `MINISTRIES` in `src/model.ts`. Die 
 | DIP `drucksache-text` | API | Volltext aller Drucksachen gegen das Themenraster; zusätzlich alles aus den ausgewählten Ressorts |
 | Anhörungen und öffentliche Sitzungen | Terminlisten der Ausschüsse | je ausgewähltem Bundestagsausschuss eine eigene amtliche Liste |
 | Tagesordnungen | ausschussübergreifende Liste | Ausschussspalte gegen die Bundestagsauswahl |
-| BMF-Sitemap | XML | Gesetzesvorhaben des Bundesfinanzministeriums mit Änderungsdatum |
+| BMF-Sitemap | XML | Gesetze und Verordnungen des Bundesfinanzministeriums: Kürzel, Seitentyp und Änderungsdatum aus der Adresse; einen Verfahrensschritt nennt die Sitemap nicht |
 | Lobbyregister | JSON-API | je Thema eine Abfrage; aufgeführt wird, wer mindestens zwei Themen berührt |
 | BAFA-Feed Außenwirtschaft | RSS | nur Adressen unter `/Aussenwirtschaft/`; ohne Gremienbezug |
 
