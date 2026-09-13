@@ -1,4 +1,4 @@
-import type {Item} from '../model';
+import {COMMITTEES,MINISTRIES,type Item} from '../model';
 import {topicById} from '../server/topics';
 import type {LobbyProject} from '../server/lobby';
 // Nach welchem Datum geordnet und aufbewahrt wird: der Zeitpunkt der letzten Bewegung laut Quelle.
@@ -15,6 +15,13 @@ export function datumsteil(i:Pick<Item,'updatedAt'|'publishedAt'|'firstSeen'>,fo
  const gefuehrt=format(recency(i));
  const eigenes=i.publishedAt&&berlinTag(recency(i))!==berlinTag(i.publishedAt)?format(i.publishedAt):null;
  return {gefuehrt,eigenes};
+}
+
+// Gremien fuer die Suche: Kurzname und amtlicher Name. Mit den Kurznamen allein ("Auswaertiges", "Haushalt") fand
+// "Auswaertiger Ausschuss" live keines seiner 9 Dokumente und "Haushaltsausschuss" eines von 5.
+export function gremienNamen(i:Pick<Item,'committees'|'ministries'>):string[]{
+ return [...i.committees.flatMap(id=>{const c=COMMITTEES.find(x=>x.id===id);return c?[c.short,c.name]:[];}),
+  ...i.ministries.flatMap(id=>{const m=MINISTRIES.find(x=>x.id===id);return m?[m.short,m.name]:[];})];
 }
 
 // Der Suchtext eines Dokuments. Frueher wurden die Felder roh verkettet: ein fehlendes

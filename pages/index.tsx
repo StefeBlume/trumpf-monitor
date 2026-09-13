@@ -4,7 +4,7 @@ import {Radar,LayoutDashboard,FileText,Radio,Settings,Search,ArrowUpRight,Refres
 import {COMMITTEES,MINISTRIES,SOURCES,committeeById,type Dashboard,type Item,type Briefing,type Change} from '../src/model';
 import {TOPICS,topicById,type TopicMatch} from '../src/server/topics';
 import type {LobbyProject} from '../src/server/lobby';
-import {recency,datumsteil as datumsteilRoh,suchtext,kartenDatum,istTermin,datum,nurTag,withTopics,anzeigeStatus,STATUS_STUNDEN,berlinTag,themenReihenfolge,quellenStand} from '../src/ui/format';
+import {recency,datumsteil as datumsteilRoh,suchtext,kartenDatum,istTermin,datum,nurTag,withTopics,anzeigeStatus,STATUS_STUNDEN,berlinTag,themenReihenfolge,quellenStand,gremienNamen} from '../src/ui/format';
 // Statischer Betrieb auf GitHub Pages: kein Server, kein Schlüssel. Die Seite liest den Stand,
 // den der tägliche Lauf in bootstrap.json geschrieben hat. Alles, was einen Server braucht, entfällt.
 const STATIC=process.env.NEXT_PUBLIC_STATIC==='1';
@@ -84,7 +84,7 @@ export default function Home(){
  const briefing=data.briefings.find(b=>b.id===pickedBriefing)??latest;
  const types=[...new Set(data.items.map(i=>i.documentType))].sort((a,b)=>a.localeCompare(b,'de'));
  const inTopic=(i:Item)=>!topic||topicsOf(i).some(m=>m.topic===topic);
- const matches=data.items.filter(i=>i.archived===showArchive&&inTopic(i)&&(!source||i.sourceId===source)&&(!body||i.committees.includes(body)||i.ministries.includes(body))&&(!status||anzeigeStatus(i)===status)&&(!docType||i.documentType===docType)&&(!after||berlinTag(recency(i))>=after)&&(!query||suchtext(i,bodies(i)).includes(query.trim().toLowerCase()))).sort((a,b)=>recency(b).localeCompare(recency(a)));
+ const matches=data.items.filter(i=>i.archived===showArchive&&inTopic(i)&&(!source||i.sourceId===source)&&(!body||i.committees.includes(body)||i.ministries.includes(body))&&(!status||anzeigeStatus(i)===status)&&(!docType||i.documentType===docType)&&(!after||berlinTag(recency(i))>=after)&&(!query||suchtext(i,gremienNamen(i)).includes(query.trim().toLowerCase()))).sort((a,b)=>recency(b).localeCompare(recency(a)));
  // Termine tragen nur einen kurzen Titel und treffen das Themenraster so gut wie nie. Der Filter
  // wuerde den Kalender bei jeder Auswahl leeren, deshalb bleibt er vollstaendig - und sagt das.
  const upcoming=data.items.filter(i=>!i.archived&&isUpcoming(i)).sort((a,b)=>a.publishedAt!.localeCompare(b.publishedAt!));

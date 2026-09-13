@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {recency,datumsteil,suchtext,kartenDatum,datum,nurTag,anzeigeStatus,berlinTag,themenReihenfolge,quellenStand} from '../src/ui/format';
+import {recency,datumsteil,suchtext,kartenDatum,datum,nurTag,anzeigeStatus,berlinTag,themenReihenfolge,quellenStand,gremienNamen} from '../src/ui/format';
 import type {Item} from '../src/model';
 const item=(over:Partial<Item>={}):Item=>({externalId:'1',title:'Gesetz zur Änderung des Außenwirtschaftsgesetzes',
  url:'https://www.bundestag.de/x',text:'',publishedAt:null,updatedAt:null,documentType:'Gesetzentwurf',
@@ -459,4 +459,15 @@ test('Quellenkarten benennen Teilabrufe und Fehler richtig',()=>{
  assert.ok(seite.includes('${quellenStand(s).vorsatz}${date(s.checkedAt,true)}'),'der Zeitpunkt');
  assert.ok(seite.includes('${s.count} ${quellenStand(s).abruf}'),'die Anzahl');
  assert.match(readFileSync('src/ui/style.css','utf8'),/\.badge\.warning\{/,'das Warnabzeichen hat eine Gestaltung');
+});
+
+// Der Suchtext kannte nur Kurznamen. Live fand "Auswärtiger Ausschuss" keines seiner 9 Dokumente,
+// "Wirtschaftsausschuss des Bundesrates" keines von 4, "Haushaltsausschuss" eines von 5.
+test('Die Suche findet Gremien auch unter ihrem amtlichen Namen',()=>{
+ const namen=gremienNamen({committees:['aa','br-wi','ha'],ministries:['bmf']});
+ const t=suchtext(item({committees:['aa','br-wi','ha'],ministries:['bmf']}),namen);
+ for(const q of ['auswärtiger ausschuss','wirtschaftsausschuss des bundesrates','haushaltsausschuss','bundesministerium der finanzen','auswärtiges','haushalt','bmf'])
+  assert.ok(t.includes(q),q);
+ assert.deepEqual(gremienNamen({committees:['gibt-es-nicht'],ministries:[]}),[],'Unbekanntes bleibt draußen');
+ assert.ok(readFileSync('pages/index.tsx','utf8').includes('suchtext(i,gremienNamen(i))'),'die Dokumentliste sucht damit');
 });
