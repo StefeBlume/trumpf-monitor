@@ -484,3 +484,19 @@ test('Aus dem Briefing geöffnete Dokumente behalten ihre Fundstellen',()=>{
  assert.ok(seite.includes("onClick={()=>{setPickedBriefing('');navigate(latest?'briefings':'sources');}}"),'„Briefing lesen“ öffnet das neueste');
  assert.ok(seite.includes('disabled={!data.items.some(i=>i.id===e.itemId)}'),'ein Logeintrag ohne Dokument ist nicht klickbar');
 });
+
+// Der Export schrieb nur "Datum:" mit dem Veröffentlichungstag. Bei 115 von 118 Briefing-Einträgen wich das vom Datum der
+// Karte ab - "Datum: 04. Aug. 2026" für ein Papier, das am 3. September überwiesen wurde und deshalb im Briefing stand.
+test('Der Export nennt dieselben Daten wie die Dokumentansicht',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ const start=seite.indexOf('async function exportBriefing');
+ const exp=seite.slice(start,seite.indexOf('\n',seite.indexOf('const entry=',start)));
+ assert.ok(!exp.includes('`Datum: ${date(i.publishedAt)}`'),'kein unbeschriftetes Datum');
+ assert.ok(exp.includes("`${istTermin(i)?'Termin':'Veröffentlicht'}: ${date(i.publishedAt)}`"),'Veröffentlichung bzw. Termin');
+ assert.ok(exp.includes('`Letzte Bewegung laut Quelle: ${date(i.updatedAt,true)}`'),'und die Bewegung, nach der das Briefing zählt');
+ // Dieselbe Bedingung wie in der Dokumentansicht: ein Termin ohne eigenes Änderungsdatum nennt keine Bewegung.
+ assert.ok(exp.includes('i.updatedAt&&!(istTermin(i)&&i.updatedAt===i.publishedAt)'));
+ // "Ausgangsstand · Unterrichtung · Unterrichtung": Karte und Ansicht lassen einen gleichnamigen Schritt weg, der Export nicht.
+ assert.ok(exp.includes("${i.step&&i.step!==i.documentType?' · '+i.step:''}"),'kein doppelter Verfahrensschritt');
+ assert.ok(seite.includes("['Letzte Bewegung laut Quelle',selected.updatedAt&&!(istTermin(selected)&&selected.updatedAt===selected.publishedAt)?"),'die Ansicht nutzt dieselbe Regel');
+});
