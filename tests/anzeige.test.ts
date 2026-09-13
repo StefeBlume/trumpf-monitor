@@ -98,7 +98,7 @@ test('Die Fehlerseite ist deutsch und führt zurück',()=>{
 // sichtbar ist - erklärt wurde sie nirgends. Wer im DIP nachschlägt, findet dort mehr Ausschüsse.
 test('Die Regel für Querschnittsausschüsse steht in der Oberfläche',()=>{
  const quelle=readFileSync('pages/index.tsx','utf8');
- assert.ok(quelle.includes('zählt nur federführend'),'die Karten müssen es kennzeichnen');
+ assert.ok(quelle.includes('Vorlagen nur federführend'),'die Karten müssen es kennzeichnen');
  assert.ok(quelle.includes('nur, wenn sie federführend sind'),'die Regel muss erklärt werden');
  assert.ok(quelle.includes('zeigt deshalb oft mehr Ausschüsse'),'der Unterschied zum DIP gehört dazu');
  assert.ok(quelle.includes('möglicherweise weitere mitberatende'),'auch im Dokument selbst');
@@ -372,4 +372,14 @@ test('Termine behaupten keine Federführung',()=>{
  assert.ok(seite.includes("{istTermin(selected)?'Veranstaltet die Sitzung':'Federführend'}"),'der Gremienbereich');
  assert.ok(seite.includes("${istTermin(i)?'Ausschuss':'Federführend'}"),'der Export');
  assert.ok(!seite.includes('{lead.short} · federführend</span>'),'keine unbedingte Federführung auf Karten');
+});
+
+// "zählt nur federführend" stand auf der Karte des Rechtsausschusses, deren 7 Einträge zu 5 aus Anhörungen bestanden;
+// und bei einer Anhörung erklärte die Dokumentansicht, das DIP nenne "zu diesem Vorgang" weitere Ausschüsse.
+test('Die Federführungsregel gilt für Vorlagen, nicht für Sitzungen',()=>{
+ const quelle=readFileSync('pages/index.tsx','utf8');
+ assert.ok(quelle.includes('Bei Vorlagen zählen {COMMITTEES.filter(c=>c.leadOnly).length} dieser Gremien nur'),'die Regel nennt ihren Geltungsbereich');
+ assert.ok(quelle.includes('Ihre eigenen Sitzungen und Anhörungen erscheinen immer.'),'und die Ausnahme');
+ assert.ok(!quelle.includes('zählt nur federführend'),'kein Abzeichen ohne Geltungsbereich');
+ assert.ok(quelle.includes('{!istTermin(selected)&&selected.committees.some(c=>committeeById(c)?.leadOnly)&&'),'kein DIP-Hinweis bei Terminen');
 });
