@@ -54,7 +54,11 @@ export interface DocumentInput {
  originator:string|null;       // Urheber laut Fundstelle
  topics:TopicMatch[];          // Fundstellen der TRUMPF-Themen, mit Beleg
 }
-export interface Item extends DocumentInput {id:string; sourceId:string; institution:string; hash:string; version:number; change:Change; firstSeen:string; lastSeen:string; changedAt:string; archived:boolean; quelleStand?:string|null;}
+// Ob das amtliche PDF abrufbar ist und welchen Zeitstempel der Server nennt. Das DIP sagt nicht, wann ein PDF online ging,
+// und fuehrt Drucksachen teils, bevor es abrufbar ist. zeit bleibt vom ersten erfolgreichen Abruf an; url, damit ein
+// geaenderter Link neu geprueft wird.
+export interface PdfBefund {stand:'online'|'fehlt'; zeit:string|null; geprueft:string; url:string;}
+export interface Item extends DocumentInput {id:string; sourceId:string; institution:string; hash:string; version:number; change:Change; firstSeen:string; lastSeen:string; changedAt:string; archived:boolean; quelleStand?:string|null; pdf?:PdfBefund;}
 export interface Event {id:string; itemId:string; title:string; at:string; change:Change; sourceId:string; version:number;}
 export interface Briefing {id:string; createdAt:string; day:string; baseline:boolean; summary:string; gesamt?:number; items:Item[]; coverage:{ok:number; failed:number; manual:number}; errors:string[];}
 export interface Dashboard {items:Item[]; sources:Source[]; briefings:Briefing[]; events:Event[]; lobby:LobbyEntry[]; serverTime:string; scheduleEnabled:boolean;}

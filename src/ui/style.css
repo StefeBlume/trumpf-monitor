@@ -109,3 +109,13 @@ h1,h2,h3,p,strong,li,td,th{overflow-wrap:break-word}
 .vorhaben-zeile span svg{vertical-align:-1px;color:#8ea3d6}
 
 .nur-ff{display:inline-block;font-size:11px;color:#8a6a2a;background:#fdf6e7;border-radius:5px;padding:3px 7px;margin-top:2px}
+
+/* Gespeichert */
+.merken{margin-top:16px}
+.button.gesperrt{cursor:not-allowed;opacity:.65}
+.badge.gemerkt{color:#1d3f9e;background:#e9eeff;display:inline-flex;align-items:center;gap:4px}
+.gemerkt-eintrag{display:grid;gap:5px}
+.gemerkt-fuss{font-size:12px;color:var(--muted);padding-left:4px}
+.notice.warnung{background:#fdf6e7;color:#7a5a1c}
+.notice.warnung a{color:inherit;font-weight:600}
+.panel .notice{margin-top:14px}

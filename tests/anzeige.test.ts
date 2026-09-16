@@ -39,9 +39,10 @@ test('Ohne Quellendatum bleibt die Anzeige nutzbar',()=>{
 test('Die Oberfläche benennt das Zusatzdatum nur auf eine Weise',()=>{
  const quelle=readFileSync('pages/index.tsx','utf8');
  assert.equal((quelle.match(/>bewegt /g)??[]).length,0,'"bewegt" war die zweite Wortwahl und ist abgelöst');
- assert.ok(quelle.includes('Dokument vom'),'die verbliebene Wortwahl muss vorhanden sein');
+ assert.ok(!quelle.includes('Dokument vom'),'"Dokument vom" las sich als Veröffentlichungstag und ist abgelöst');
+ assert.ok(readFileSync('src/ui/format.ts','utf8').includes("zusatz:eigenes?`${istTermin(i)?'Sitzung am':'datiert'} ${eigenes}`:null"),'die eine Wortwahl steht in format.ts');
  // Beide Karten müssen dieselbe Hilfsfunktion nutzen, statt das Datum selbst zusammenzubauen.
- assert.equal((quelle.match(/datumsteil\(item\)/g)??[]).length>=2,true,'beide Kartenarten nutzen dieselbe Darstellung');
+ assert.equal((quelle.match(/kartenDaten\(item\)/g)??[]).length>=2,true,'beide Kartenarten nutzen dieselbe Darstellung');
 });
 
 // Die Zehn-Tage-Grenze gilt der Bewegung, nicht dem Datum des Papiers. Der alte Untertitel
@@ -154,13 +155,14 @@ test('Überlange Amtswörter brechen um',()=>{
 // rechnet die Zeiten aus dem Workflow selbst nach, damit Text und Zeitplan nicht wieder auseinanderlaufen.
 test('Die genannten Laufzeiten folgen aus dem Zeitplan',()=>{
  const yml=readFileSync('.github/workflows/monitor.yml','utf8');
- const m=/cron:\s*'\*\/30 (\d+)-(\d+) \* \* \*'/.exec(yml);
+ const m=/cron:\s*'([\d,]+) (\d+)-(\d+) \* \* \*'/.exec(yml);
  assert.ok(m,'Zeitplan nicht gefunden');
- const [von,bis]=[Number(m![1]),Number(m![2])];
+ const minuten=m![1].split(',').map(Number);
+ const [von,bis]=[Number(m![2]),Number(m![3])];
  const berlin=(tag:string,h:number,min:number)=>new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',hour:'2-digit',minute:'2-digit'})
   .format(new Date(`${tag}T${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}:00Z`));
- const sommer=[berlin('2026-07-15',von,0),berlin('2026-07-15',bis,30)];
- const winter=[berlin('2026-12-15',von,0),berlin('2026-12-15',bis,30)];
+ const sommer=[berlin('2026-07-15',von,minuten[0]),berlin('2026-07-15',bis,minuten.at(-1)!)];
+ const winter=[berlin('2026-12-15',von,minuten[0]),berlin('2026-12-15',bis,minuten.at(-1)!)];
  const seite=readFileSync('pages/index.tsx','utf8');
  assert.ok(seite.includes(`im Sommer von ${sommer[0]} bis ${sommer[1]} Uhr`),`Sommer muss ${sommer.join('–')} lauten`);
  assert.ok(seite.includes(`im Winter von ${winter[0]} bis ${winter[1]} Uhr`),`Winter muss ${winter.join('–')} lauten`);
@@ -208,14 +210,6 @@ test('Keine Reste der Codex-Fassung',()=>{
  assert.ok(seite.includes('antwortet kein Monitoring-Server'),'die Meldung nennt die tatsächliche Ursache');
 });
 
-// Die Briefingansicht gruppierte nur nach Gremium und Ressort: drei Volltexttreffer eines Laufs erschienen
-// nirgends. Und "22 neue oder geänderte Dokumente" stand über einer Liste von zwölf, ohne Erklärung.
-test('Das Briefing verschweigt weder Einträge ohne Gremium noch gekürzte Listen',()=>{
- const seite=readFileSync('pages/index.tsx','utf8');
- assert.ok(seite.includes('<h2>Ohne Gremienzuordnung</h2>'),'Einträge ohne Gremium und Ressort brauchen eine eigene Gruppe');
- assert.ok(/!i\.committees\.length&&!i\.ministries\.length\)\.map/.test(seite),'die Gruppe zeigt genau diese Einträge');
- assert.ok(seite.includes('Aufgeführt sind die ersten {briefing.items.length} von {briefing.gesamt} Dokumenten'),'eine gekürzte Liste sagt es');
-});
 
 // Das README behauptete, die Datenbank wachse unbegrenzt und nichts werde entfernt - seit der
 // Zehn-Tage-Regel falsch. Ebenso "ungefiltert" fuer BAFA und "nur Titel" fuer einen Feed mit Beschreibungen.
@@ -234,8 +228,10 @@ test('Das README beschreibt Aufbewahrung und BAFA-Quelle zutreffend',()=>{
 // "Dokument vom" den Sitzungstag bezeichnet.
 test('Termine heißen Termine, nicht Veröffentlichungen',()=>{
  const seite=readFileSync('pages/index.tsx','utf8');
- assert.ok(seite.includes("[istTermin(selected)?'Termin':'Veröffentlicht',date(selected.publishedAt)]"),'die Dokumentansicht unterscheidet');
- assert.equal((seite.match(/\{istTermin\(item\)\?'Sitzung am':'Dokument vom'\}/g)??[]).length,2,'beide Kartenformen unterscheiden');
+ const format=readFileSync('src/ui/format.ts','utf8');
+ assert.ok(format.includes("if(istTermin(i))return [['Termin',datum(i.publishedAt)],"),'die Dokumentansicht unterscheidet');
+ assert.ok(seite.includes(',...datumsZeilen(selected)].map('));
+ assert.ok(format.includes("if(istTermin(i))return nurEigenes?'Sitzung am':"),'beide Kartenformen unterscheiden');
  assert.ok(seite.includes('const isUpcoming=(i:Item)=>kommenderTermin(i,today());'),'"Als Nächstes", Gremienkarte und Listen nutzen dieselbe Bestimmung');
 });
 
@@ -262,7 +258,7 @@ test('Reine Tagesangaben erscheinen ohne erfundene Uhrzeit und ohne Tagesverschi
  assert.equal(datum('2026-09-22T23:30:00.000Z'),'23. Sept. 2026','ein Zeitpunkt kurz vor Mitternacht UTC ist in Berlin schon der nächste Tag');
  assert.equal(datum(null),'Kein Datum in der Quelle');
  const seite=readFileSync('pages/index.tsx','utf8');
- assert.ok(seite.includes("istTermin(selected)&&selected.updatedAt===selected.publishedAt"),'ein Termin ohne eigenes Änderungsdatum behauptet keine Bewegung');
+ assert.ok(readFileSync('src/ui/format.ts','utf8').includes('const eigene=!!i.updatedAt&&i.updatedAt!==i.publishedAt;'),'ein Termin ohne eigenes Änderungsdatum behauptet keine Bewegung');
  assert.ok(seite.includes("timeZone:nurTag(i.publishedAt!)?'UTC':'Europe/Berlin'"),'"Als Nächstes" verschiebt keinen Tag');
  assert.ok(!/new Intl\.DateTimeFormat\('de-DE',full\?/.test(seite),'kein zweiter Formatierer neben datum()');
 });
@@ -360,7 +356,6 @@ test('Neu und Geändert gelten 24 Stunden nach der letzten echten Änderung',()=
  const seite=readFileSync('pages/index.tsx','utf8');
  assert.ok(!seite.includes('i.change===status'),'der Filter nutzt die Anzeige');
  assert.ok(!seite.includes('labels[item.change]')&&!seite.includes('labels[selected.change]'),'Karte und Dokumentansicht nutzen die Anzeige');
- assert.ok(seite.includes('labels[e.change]'),'das Änderungslog bleibt ein Laufprotokoll');
 });
 
 // "Als Nächstes" zählte in der Überschrift alle kommenden Termine, zeigte aber fest die ersten sechs - ohne
@@ -395,22 +390,12 @@ test('Die Federführungsregel gilt für Vorlagen, nicht für Sitzungen',()=>{
  assert.ok(!quelle.includes('möglicherweise weitere mitberatende'),'kein pauschaler Hinweis');
 });
 
-// Die Briefingansicht nutzte die Karte des Lagebilds mit ihrem 24-Stunden-Status. Mit der Uhr 48 Stunden
-// später trugen alle 18 Karten des Briefings "30 neue oder geänderte Dokumente" das Etikett "Unverändert",
-// die Dokumentansicht ebenso. Ein Briefing ist ein gespeicherter Stand und zeigt, was in seinem Lauf geschah.
-test('Briefings zeigen den Status ihres Laufs, nicht den der letzten 24 Stunden',()=>{
+// Karten zeigen den Status der letzten 24 Stunden - wie die Dokumentansicht.
+test('Karte und Dokumentansicht zeigen denselben Status',()=>{
  const seite=readFileSync('pages/index.tsx','utf8');
- const start=seite.indexOf("view==='briefings'");
- // Nicht per [^>]*: der Klick-Handler enthaelt selbst ein "=>".
- const karten=seite.slice(start,seite.indexOf('Änderungslog',start)).split('<ItemCard ').slice(1).map(k=>k.slice(0,k.indexOf('/>')));
- assert.equal(karten.length,2,'beide Kartengruppen des Briefings');
- for(const k of karten)assert.ok(k.includes('status={i.change}')&&k.includes('setAusBriefing(true)'),k);
- assert.ok(seite.includes('const stand=status??anzeigeStatus(item);'),'die Karte nimmt den übergebenen Status');
+ assert.ok(seite.includes('const stand=anzeigeStatus(item);'),'die Karte');
  assert.ok(seite.includes("{'item-stripe '+stand}")&&seite.includes('{labels[stand]}'),'Streifen und Etikett folgen ihm');
- assert.ok(seite.includes('ausBriefing?selected.change:anzeigeStatus(selected)')&&seite.includes('{labels[detailStatus]}'),'die Dokumentansicht zeigt denselben Status');
- assert.ok(seite.includes('useEffect(()=>{if(!selected)setAusBriefing(false);},[selected]);'),'und vergisst ihn beim Schließen');
- // Das Lagebild bleibt beim 24-Stunden-Status.
- assert.ok(seite.includes('<ItemCard key={item.id} item={item} onClick={()=>setSelected(item)}/>'));
+ assert.ok(seite.includes("const detailStatus=selected?anzeigeStatus(selected):'unchanged';")&&seite.includes('{labels[detailStatus]}'),'die Dokumentansicht');
 });
 
 test('Tage werden nach Berliner Kalender verglichen',()=>{
@@ -472,33 +457,18 @@ test('Die Suche findet Gremien auch unter ihrem amtlichen Namen',()=>{
  assert.ok(readFileSync('pages/index.tsx','utf8').includes('suchtext(i,gremienNamen(i))'),'die Dokumentliste sucht damit');
 });
 
-// Briefings werden ohne Fundstellen ausgeliefert. Aus dem Briefing geöffnet, fehlten Themen und Belege - live bei allen
-// 8 Einträgen mit Thema. Und "Briefing lesen" unter der Zusammenfassung des neuesten Laufs öffnete ein vorher gewähltes älteres.
-test('Aus dem Briefing geöffnete Dokumente behalten ihre Fundstellen',()=>{
- const seite=readFileSync('pages/index.tsx','utf8');
- const start=seite.indexOf("view==='briefings'");
- const karten=seite.slice(start,seite.indexOf('Änderungslog',start)).split('<ItemCard ').slice(1).map(k=>k.slice(0,k.indexOf('/>')));
- assert.equal(karten.length,2);
- for(const k of karten)assert.ok(k.includes('item={mitFundstellen(i)}')&&k.includes('setSelected(mitFundstellen(i))'),k);
- assert.ok(seite.includes('topics:data.items.find(x=>x.id===i.id)?.topics??i.topics'),'die Fundstellen kommen aus dem Bestand');
- assert.ok(seite.includes("onClick={()=>{setPickedBriefing('');navigate(latest?'briefings':'sources');}}"),'„Briefing lesen“ öffnet das neueste');
- assert.ok(seite.includes('disabled={!data.items.some(i=>i.id===e.itemId)}'),'ein Logeintrag ohne Dokument ist nicht klickbar');
-});
 
-// Der Export schrieb nur "Datum:" mit dem Veröffentlichungstag. Bei 115 von 118 Briefing-Einträgen wich das vom Datum der
-// Karte ab - "Datum: 04. Aug. 2026" für ein Papier, das am 3. September überwiesen wurde und deshalb im Briefing stand.
+// Der Export schrieb nur "Datum:" mit dem Veröffentlichungstag, abweichend von der Karte. Er nutzt jetzt dieselben
+// Datumszeilen wie die Dokumentansicht.
 test('Der Export nennt dieselben Daten wie die Dokumentansicht',()=>{
  const seite=readFileSync('pages/index.tsx','utf8');
- const start=seite.indexOf('async function exportBriefing');
- const exp=seite.slice(start,seite.indexOf('\n',seite.indexOf('const entry=',start)));
+ const start=seite.indexOf('async function exportGespeichert');
+ const exp=seite.slice(start,seite.indexOf('\n',seite.indexOf('const eintrag=',start)));
  assert.ok(!exp.includes('`Datum: ${date(i.publishedAt)}`'),'kein unbeschriftetes Datum');
- assert.ok(exp.includes("`${istTermin(i)?'Termin':'Veröffentlicht'}: ${date(i.publishedAt)}`"),'Veröffentlichung bzw. Termin');
- assert.ok(exp.includes('`Letzte Bewegung laut Quelle: ${date(i.updatedAt,true)}`'),'und die Bewegung, nach der das Briefing zählt');
- // Dieselbe Bedingung wie in der Dokumentansicht: ein Termin ohne eigenes Änderungsdatum nennt keine Bewegung.
- assert.ok(exp.includes('i.updatedAt&&!(istTermin(i)&&i.updatedAt===i.publishedAt)'));
- // "Ausgangsstand · Unterrichtung · Unterrichtung": Karte und Ansicht lassen einen gleichnamigen Schritt weg, der Export nicht.
+ assert.ok(exp.includes('...datumsZeilen(i).map(([k,v])=>`${k}: ${v}`)'),'dieselben Zeilen wie die Ansicht');
+ // "Ausgangsstand · Unterrichtung · Unterrichtung": Karte und Ansicht lassen einen gleichnamigen Schritt weg, der Export auch.
  assert.ok(exp.includes("${i.step&&i.step!==i.documentType?' · '+i.step:''}"),'kein doppelter Verfahrensschritt');
- assert.ok(seite.includes("['Letzte Bewegung laut Quelle',selected.updatedAt&&!(istTermin(selected)&&selected.updatedAt===selected.publishedAt)?"),'die Ansicht nutzt dieselbe Regel');
+ assert.ok(seite.includes(',...datumsZeilen(selected)].map('),'die Ansicht nutzt dieselbe Regel');
 });
 
 // Die Listen ordneten angekündigte Termine als "neueste" umgekehrt über alles: beim Rechtsausschuss fünf Anhörungen vom

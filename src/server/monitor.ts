@@ -1,7 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {diffWords} from 'diff';
 import {committeeById,type Briefing,type Dashboard,type Item,type Event,type Source,type DocumentInput} from '../model';
-import {db} from './db';import {configuredSources,ingest,lookbackStart,bmfAngaben,SAMMELUEBERWEISUNG} from './connectors';import {contentHash,dipUrl,sitzungstag} from './parsing';import {TOPICS} from './topics';import {rasterFingerabdruck} from './raster';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
+import {db} from './db';import {configuredSources,ingest,lookbackStart,bmfAngaben,SAMMELUEBERWEISUNG,pdfKopf} from './connectors';import {contentHash,dipUrl,sitzungstag} from './parsing';import {TOPICS} from './topics';import {rasterFingerabdruck} from './raster';import {lobbyEntries,enrichProjects,type LobbyEntry} from './lobby';
 // Stände aus einer früheren Fassung tragen neuere Felder noch nicht. Jeder Leser bekommt deshalb
 // vollständige Listen, statt an einem fehlenden Feld zu scheitern - genau daran brach ein Lauf ab.
 // Die kurzen DIP-Adressen aus frueheren Fassungen fuehren auf "Seite nicht gefunden". Ein Eintrag
@@ -91,7 +91,7 @@ export function briefingSummary(updated:Item[],baseline:boolean,ok:number,failed
  const verteilung=!committees.size?'':mitAusschuss===changes.length?` in ${gremien}`:`, davon ${mitAusschuss} in ${gremien} und ${changes.length-mitAusschuss} ohne Ausschuss`;
  return `${head}${zahl(changes.length,'neues oder geändertes Dokument','neue oder geänderte Dokumente')}${verteilung}. ${coverage}`;
 }
-export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,since:string,warn?:(n:string)=>void)=>Promise<DocumentInput[]>; retentionDays?:number; lobby?:boolean; lobbyFetcher?:()=>Promise<LobbyEntry[]>}={}):Promise<Briefing|null>{
+export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,since:string,warn?:(n:string)=>void)=>Promise<DocumentInput[]>; retentionDays?:number; lobby?:boolean; lobbyFetcher?:()=>Promise<LobbyEntry[]>; pdfPruefer?:PdfPruefer}={}):Promise<Briefing|null>{
  const c=await db(),id=randomUUID(),clock=berlinClock();
  const lock=await c.execute({sql:'INSERT INTO locks(id,owner,expires) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,expires=excluded.expires WHERE locks.expires < ?',args:['monitor',id,Date.now()+600000,Date.now()]});
  if(!lock.rowsAffected)throw new Error('Ein Quellenlauf ist bereits aktiv.');
@@ -183,7 +183,9 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  // Gespeichert wird die Art der letzten echten Aenderung; wann sie war, steht in changedAt. Mit "unchanged" bei
  // jeder erneuten Lieferung trug nach 30 Minuten jede Karte "Unveraendert". Briefing und Aenderungslog nutzen
  // weiter das Ergebnis dieses Laufs.
- const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(change==='changed'?1:0):1,change:change==='unchanged'&&old&&old.change!=='unchanged'?old.change:change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false,quelleStand:doc.updatedAt??doc.publishedAt??null};
+ const item:Item={...doc,id:itemId,sourceId:source.id,institution:source.institution,hash,version:old?old.version+(change==='changed'?1:0):1,change:change==='unchanged'&&old&&old.change!=='unchanged'?old.change:change,firstSeen:old?.firstSeen??now,lastSeen:now,changedAt:change==='unchanged'?old!.changedAt:now,archived:old?.archived??false,quelleStand:doc.updatedAt??doc.publishedAt??null,
+  // Der PDF-Befund stammt nicht aus der Quelle und ginge beim Neuschreiben verloren; die Zeit des ersten Abrufs muss bleiben.
+  pdf:old?.pdf&&old.pdf.url===doc.pdfUrl?old.pdf:undefined};
  if(item.paperKey)jePapier.set(item.paperKey,item);
  statements.push({sql:'INSERT INTO items(id,source_id,data) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',args:[itemId,source.id,JSON.stringify(item)]});
  if(change!=='unchanged'){
@@ -213,6 +215,9 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  if(weg.length){const l=weg.map(()=>'?').join(',');await c.batch([{sql:`DELETE FROM versions WHERE item_id IN (${l})`,args:weg},{sql:`DELETE FROM events WHERE json_extract(data,'$.itemId') IN (${l})`,args:weg},{sql:`DELETE FROM items WHERE id IN (${l})`,args:weg}],'write');}
  if(ok)await deduplicate();
  if(retention>0&&ok)await prune(retention,[...new Set([...configuredSources().map(s=>s.id),...all.map(s=>s.id)])]);
+ // Mit eigenem fetcher (Tests, Fixtures) wird nichts im Netz geprueft, ausser ein Pruefer ist angegeben.
+ const pruefer=options.pdfPruefer??(options.fetcher?undefined:pdfKopf);
+ if(ok&&pruefer)await pdfPruefen(pruefer);
  // Das Briefing traegt die Dokumente mit; bei einem Erstimport waren das 184 KB. Gespeichert werden
  // hoechstens 40, ausgeliefert davon zwoelf - die Gesamtzahl steht in der Zusammenfassung.
  const b:Briefing={id,createdAt:new Date().toISOString(),day:clock.day,baseline:updated.some(i=>i.change==='baseline'),summary:briefingSummary(updated,updated.some(i=>i.change==='baseline'),ok,failed,manual),gesamt:updated.length,items:updated.slice(0,40),coverage:{ok,failed,manual},errors};
@@ -223,6 +228,32 @@ export async function runMonitor(options:{sources?:Source[]; fetcher?:(s:Source,
  await c.execute({sql:'INSERT INTO briefings(id,day,data) VALUES(?,?,?)',args:[id,clock.day,JSON.stringify(b)]});
  return b;
  }finally{await c.execute({sql:'DELETE FROM locks WHERE id=? AND owner=?',args:['monitor',id]});}
+}
+export type PdfPruefer=(url:string)=>Promise<{stand:'online'|'fehlt';zeit:string|null}|null>;
+// Das DIP nennt nicht, wann ein PDF online ging, und fuehrt Drucksachen teils, bevor es abrufbar ist. Geprueft wird jedes PDF,
+// bis es abrufbar ist, die neuesten Eintraege zuerst. Den Zeitstempel des Servers behaelt die App vom ersten erfolgreichen
+// Abruf an: ein spaeter ersetztes PDF traegt einen neueren, der nichts ueber die Veroeffentlichung sagt.
+export async function pdfPruefen(pruefe:PdfPruefer,max=150,jetzt=new Date().toISOString()):Promise<number>{
+ const c=await db();
+ const offen=(await c.execute('SELECT data FROM items')).rows.map(r=>asItem(JSON.parse(String(r.data))))
+  .filter(i=>i.pdfUrl&&!(i.pdf&&i.pdf.url===i.pdfUrl&&i.pdf.stand==='online'))
+  .sort((a,b)=>b.firstSeen.localeCompare(a.firstSeen)).slice(0,max);
+ const statements:{sql:string;args:string[]}[]=[];
+ for(let k=0;k<offen.length;k+=6){
+  const teil=offen.slice(k,k+6);
+  const befunde=await Promise.all(teil.map(i=>pruefe(i.pdfUrl!).catch(()=>null)));
+  teil.forEach((i,n)=>{
+   const b=befunde[n];if(!b)return;
+   statements.push({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...i,pdf:{stand:b.stand,zeit:b.zeit,geprueft:jetzt,url:i.pdfUrl!}}),i.id]});
+  });
+ }
+ if(statements.length)await c.batch(statements,'write');
+ return statements.length;
+}
+// Ausgeliefert wird, was die Seite zeigt. Seit "Gespeichert" die Briefings ersetzt, braucht sie vom Lauf nur dessen
+// Zusammenfassung. Briefings und Aenderungslog machten ein Fuenftel des Stands aus: 120 von 567 KB, bei jedem Oeffnen geladen.
+export function veroeffentlichterStand(d:Dashboard):Dashboard{
+ return {...d,briefings:d.briefings.slice(0,1).map(b=>({...b,items:[]})),events:[]};
 }
 export async function history(itemId:string){const c=await db();const r=await c.execute({sql:'SELECT data FROM versions WHERE item_id=? ORDER BY version DESC',args:[itemId]});const versions:Item[]=r.rows.map(r=>asItem(JSON.parse(String(r.data))));const render=(v:Item)=>[v.title,v.documentType,v.step??'',v.procedure??'',v.documentNumber??'',v.text].join('\n');return {versions,diff:versions.length>1?diffWords(render(versions[1]),render(versions[0])):[]};}
 export async function archive(itemId:string,archived:boolean){const c=await db();const row=await c.execute({sql:'SELECT data FROM items WHERE id=?',args:[itemId]});if(!row.rows.length)throw new Error('Treffer nicht gefunden');const item=asItem(JSON.parse(String(row.rows[0].data)));await c.execute({sql:'UPDATE items SET data=? WHERE id=?',args:[JSON.stringify({...item,archived}),itemId]});}

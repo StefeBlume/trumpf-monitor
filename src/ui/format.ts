@@ -17,6 +17,63 @@ export function datumsteil(i:Pick<Item,'updatedAt'|'publishedAt'|'firstSeen'>,fo
  return {gefuehrt,eigenes};
 }
 
+// Wie die Karte ihre Daten benennt. Sie zeigte "16. Sept. 2026" ohne Wort und daneben "Dokument vom 10. Sept." - gelesen als
+// "veroeffentlicht am 10.", und die Dokumentansicht schrieb "Veroeffentlicht: 10.09.". Die Antwort 21/7988 ist aber nur auf den
+// 10.09. datiert; der Bundestag stellte sie am 16.09. um 07:51 ins DIP und als PDF online. Das Datum einer Drucksache ist der
+// Tag, den das Papier traegt, nicht der seiner Veroeffentlichung.
+type DatumsFelder=Pick<Item,'updatedAt'|'publishedAt'|'firstSeen'|'documentType'|'sourceId'>;
+const DIP_QUELLEN=new Set(['dip-committees','dip-drucksachen']);
+export const ausDip=(i:Pick<Item,'sourceId'>)=>DIP_QUELLEN.has(i.sourceId);
+export function datumsWort(i:DatumsFelder):string{
+ const nurEigenes=!i.updatedAt||i.updatedAt===i.publishedAt;
+ if(istTermin(i))return nurEigenes?'Sitzung am':i.documentType==='Tagesordnung'?'Tagesordnung vom':'angekündigt';
+ if(nurEigenes)return !i.publishedAt?'erfasst':i.documentType==='Plenarprotokoll'?'Beratung am':'veröffentlicht';
+ return ausDip(i)?'im DIP':'aktualisiert';
+}
+export function kartenDaten(i:DatumsFelder,format:(s:string|null)=>string){
+ const {gefuehrt,eigenes}=datumsteil(i,format);
+ return {wort:datumsWort(i),gefuehrt,zusatz:eigenes?`${istTermin(i)?'Sitzung am':'datiert'} ${eigenes}`:null};
+}
+export function pdfAngabe(i:Pick<Item,'pdfUrl'|'pdf'>):{text:string;abrufbar:boolean}|null{
+ if(!i.pdfUrl)return null;
+ const p=i.pdf?.url===i.pdfUrl?i.pdf:undefined;
+ if(!p)return {text:'Noch nicht geprüft',abrufbar:true};
+ if(p.stand==='fehlt')return {text:`Noch nicht abrufbar (geprüft ${datum(p.geprueft,true)} Uhr)`,abrufbar:false};
+ return {text:p.zeit?`Online, Zeitstempel des Servers ${datum(p.zeit,true)} Uhr`:'Online, der Server nennt keinen Zeitstempel',abrufbar:true};
+}
+const mitUhr=(s:string)=>nurTag(s)?datum(s,true):`${datum(s,true)} Uhr`;
+// Die Datumszeilen der Dokumentansicht und des Exports.
+export function datumsZeilen(i:DatumsFelder&Pick<Item,'documentNumber'|'pdfUrl'|'pdf'>):[string,string][]{
+ const eigene=!!i.updatedAt&&i.updatedAt!==i.publishedAt;
+ if(istTermin(i))return [['Termin',datum(i.publishedAt)],
+  ...(eigene?[[i.documentType==='Tagesordnung'?'Datum in der Tagesordnungsliste':'Letzte Bewegung laut Quelle',mitUhr(i.updatedAt!)] as [string,string]]:[])];
+ const z:[string,string][]=[[i.documentType==='Plenarprotokoll'?'Datum der Beratung':i.documentNumber?'Datum der Drucksache':'Datum des Dokuments',datum(i.publishedAt)]];
+ const pdf=pdfAngabe(i);if(pdf)z.push(['Amtliches PDF',pdf.text]);
+ if(eigene)z.push([ausDip(i)?'Zeitstempel im DIP':'Letzte Bewegung laut Quelle',mitUhr(i.updatedAt!)]);
+ z.push(['In der App seit',mitUhr(i.firstSeen)]);
+ return z;
+}
+// Warum ein Papier spaeter kommt, als es datiert ist. Nur, wo das DIP einen spaeteren Tag nennt; alle Angaben aus den Feldern.
+export function spaeterErschienen(i:DatumsFelder&Pick<Item,'documentNumber'|'pdfUrl'|'pdf'>):string|null{
+ if(istTermin(i)||!ausDip(i)||!i.publishedAt||!i.updatedAt||berlinTag(i.updatedAt)<=berlinTag(i.publishedAt))return null;
+ const papier=i.documentNumber?'die Drucksache':'das Papier';
+ const pdf=i.pdf?.url===i.pdfUrl&&i.pdf?.stand==='online'&&i.pdf.zeit?`, das amtliche PDF den Zeitstempel ${mitUhr(i.pdf.zeit)}`:'';
+ return `Datiert ist ${papier} auf den ${datum(i.publishedAt,true)}. Das ist der Tag, den das Papier trägt, nicht der Tag seiner Veröffentlichung: `
+  +`Der Bundestag stellt Drucksachen und Beratungsschritte oft erst Tage später ins DIP, und erst dann kann die App sie finden. `
+  +`Hier trägt der Eintrag im DIP den Zeitstempel ${mitUhr(i.updatedAt)}${pdf}; in der App steht er seit ${mitUhr(i.firstSeen)}.`;
+}
+// GitHub fuehrt geplante Laeufe nicht zuverlaessig aus: am 15.09. liefen 5 von 34, am 16.09. bis 11 Uhr einer. Die Antworten vom
+// 16.09., 07:51 kamen dadurch erst um 11:08 in die App. Ob der Stand veraltet ist, soll man sehen. Der Zeitplan laeuft von 04:07 bis
+// 20:57 UTC; gewarnt wird zwischen 05:00 und 21:00 UTC, wenn der letzte Abruf mehr als eine Stunde zurueckliegt.
+export function abrufLuecke(letzterAbruf:string|null|undefined,jetzt=Date.now()):number|null{
+ if(!letzterAbruf||isNaN(Date.parse(letzterAbruf)))return null;
+ const stunde=new Date(jetzt).getUTCHours();
+ if(stunde<5||stunde>=21)return null;
+ const minuten=Math.floor((jetzt-Date.parse(letzterAbruf))/60000);
+ return minuten>60?minuten:null;
+}
+export const dauer=(minuten:number)=>minuten<120?`${minuten} Minuten`:`${Math.floor(minuten/60)} Stunden`;
+
 // Gremien fuer die Suche: Kurzname und amtlicher Name. Mit den Kurznamen allein ("Auswaertiges", "Haushalt") fand
 // "Auswaertiger Ausschuss" live keines seiner 9 Dokumente und "Haushaltsausschuss" eines von 5.
 export function gremienNamen(i:Pick<Item,'committees'|'ministries'>):string[]{

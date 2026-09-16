@@ -34,6 +34,28 @@ export async function fetchOfficial(url:string,headers:Record<string,string>={},
  }catch(e){if(attempt===2||e instanceof PermanentSourceError)throw e;await new Promise(r=>setTimeout(r,500*2**attempt));}
  }throw new Error('Abruf fehlgeschlagen');
 }
+// Ob ein amtliches PDF abrufbar ist, und der Zeitstempel des Servers. Am 16.09. fuehrte das DIP die Antworten 21/8016 bis
+// 21/8026 schon, dserver.bundestag.de antwortete fuer ihre PDF aber mit 404 - die App bot einen toten Link an. Bei den Antworten
+// 21/7968 bis 21/7988 (datiert 9. und 10.09.) nannte der Server 16.09., 07:51 - dieselbe Minute wie das DIP.
+// null heisst: keine belastbare Antwort, beim naechsten Lauf erneut fragen.
+export async function pdfKopf(url:string):Promise<{stand:'online'|'fehlt';zeit:string|null}|null>{
+ if(!officialURL(url))return null;
+ try{
+  let next=url;
+  for(let hop=0;hop<4;hop++){
+   const r=await fetch(next,{method:'HEAD',redirect:'manual',headers:{'User-Agent':'PolicyMonitor/1.0 (public-source monitoring)'},signal:AbortSignal.timeout(15_000)});
+   if([301,302,303,307,308].includes(r.status)){
+    const loc=r.headers.get('location');if(!loc)return null;
+    const ziel=new URL(loc,next).href;if(!officialURL(ziel))return null;next=ziel;continue;
+   }
+   if(r.status===404||r.status===410)return {stand:'fehlt',zeit:null};
+   if(!r.ok)return null;
+   const t=Date.parse(r.headers.get('last-modified')??'');
+   return {stand:'online',zeit:isNaN(t)?null:new Date(t).toISOString()};
+  }
+  return null;
+ }catch{return null;}
+}
 const WAHLPERIODE=Number(process.env.DIP_WAHLPERIODE??21);
 // Erfasstes Zeitfenster: ab dem letzten erfolgreichen Abruf mit zwei Tagen Überlappung, höchstens 30 Tage zurück.
 export function lookbackStart(checkedAt?:string):string{

@@ -92,6 +92,16 @@ npm run dev                  # http://localhost:4180
 
 Die Zeitsteuerung liegt beim Scheduler, nicht im Code: `runMonitor()` läuft, wann immer es aufgerufen wird, und schützt sich nur über eine Sperre gegen parallele Läufe. Im Betrieb ruft der GitHub-Workflow `npm run monitor` auf. Lokal gibt es zusätzlich `/api/cron`, abgesichert über `Authorization: Bearer $CRON_SECRET`.
 
+## Datumsangaben
+
+Das Datum einer Drucksache ist der Tag, den das Papier trägt — nicht der Tag, an dem es öffentlich wurde. Antworten auf Kleine Anfragen vom 9. und 10.09. stellte der Bundestag am 16.09. um 07:51 ins DIP und als PDF online; früher konnte die App sie nicht finden. Die Karten nennen deshalb beide Daten mit Namen: „im DIP 16. Sept. 2026 · datiert 10. Sept. 2026“. Die Dokumentansicht führt Datum der Drucksache, Zustand des amtlichen PDF, Zeitstempel im DIP und „In der App seit“ und erklärt, wenn das DIP einen späteren Tag nennt.
+
+**PDF-Prüfung.** Das DIP führt Drucksachen teils, bevor ihr PDF abrufbar ist (am 16.09. die Antworten 21/8016 bis 21/8026). Jeder Lauf fragt deshalb per `HEAD` beim amtlichen Server nach (`pdfPruefen`), bis das PDF abrufbar ist, und hält den Zeitstempel des ersten erfolgreichen Abrufs fest. Solange es fehlt, zeigt die App „PDF noch nicht online“ statt eines toten Links.
+
+## Gespeichert
+
+In der Dokumentansicht legt „Speichern“ ein Dokument unter „Gespeichert“ ab. Gespeichert wird das ganze Dokument samt Fundstellen im Speicher des Browsers (`src/ui/gespeichert.ts`), damit es die Zehn-Tage-Frist übersteht; solange es im Bestand ist, hält die Liste dessen neuesten Stand fest. Die Liste gilt nur für das Gerät und den Browser — auf dem iPhone führt die App auf dem Home-Bildschirm eine eigene, getrennt von Safari. „Liste teilen“ gibt sie als Text weiter.
+
 ## Änderungserkennung
 
 Pro Dokument wird ein SHA-256 über Titel, Text, Adresse, Datum, Beratungsstand, Dokumenttyp, Verfahrensschritt, Drucksachennummer, PDF-Adresse, Gremien, Federführung, Ressorts und Urheber gebildet (`contentHash`). Als unverändert gilt auch, was mit einem Hash aus einer früheren Darstellung übereinstimmt; Angaben, die eine andere Quelle eingearbeitet hat, zählen dabei nicht. Statuswerte: `baseline` (Erstimport), `new`, `changed`, `unchanged`. Jede Änderung schreibt eine Version; im lokalen Serverbetrieb zeigt die Detailansicht den Wortdiff zur Vorversion.
@@ -139,11 +149,11 @@ Für die Nutzung auf dem Handy ohne laufenden Mac baut `.github/workflows/monito
 2. Unter **Settings → Secrets and variables → Actions** das Secret `DIP_API_KEY` setzen.
 3. Unter **Settings → Pages** als Quelle **GitHub Actions** wählen.
 
-Der Workflow läuft alle 30 Minuten von 04:00 bis 20:30 UTC, also 06:00 bis 22:30 Berliner Zeit im Sommer und 05:00 bis 21:30 im Winter (34 Läufe am Tag). Kürzere Abstände bringen nichts, da GitHub geplante Läufe unter Last verzögert.
+Der Workflow läuft alle 10 Minuten von 04:07 bis 20:57 UTC, also 06:07 bis 22:57 Berliner Zeit im Sommer und 05:07 bis 21:57 im Winter (102 Läufe am Tag). GitHub führt geplante Läufe nicht zuverlässig aus: Mit halbstündlichen Terminen zur vollen und halben Stunde liefen am 15.09. nur 5 von 34, am 16.09. bis 11 Uhr einer. Die Minuten 7, 17 … 57 meiden die Lastspitzen; ein Lauf dauert etwa eine Minute. Liegt der letzte Abruf während der Laufzeit über eine Stunde zurück, sagt es das Lagebild und verlinkt den Handstart.
 
 **Was versioniert wird und was nicht.** `data/monitor.db` ist ableitbarer Zwischenstand und steht in `.gitignore`; bei halbstündlichen Läufen würde die Binärdatei das Repository um mehrere hundert MB im Jahr aufblähen. Zwischen den Läufen hält `actions/cache` sie vor. Versioniert wird nur `public/bootstrap.json`, und zwar ausschließlich, wenn der Lauf neue oder geänderte Dokumente gefunden hat. Fehlt die Datenbank — etwa nach Ablauf des Zwischenspeichers —, baut `seedFromSnapshot` sie aus `public/bootstrap.json` wieder auf, damit bereits bekannte Dokumente nicht erneut als neu gemeldet werden. Stände aus einer früheren Fassung tragen neuere Felder nicht; `asItem` ergänzt sie beim Lesen, sonst bricht ein Lauf an einem fehlenden Feld ab.
 
-**Briefings.** Jeder Lauf schreibt ein Briefing, damit das Lagebild immer den jüngsten Lauf beschreibt. Damit die Liste bei halbstündlichen Läufen nicht zuläuft, ersetzt ein Lauf ohne Änderung den vorherigen Leerlauf desselben Tages. Briefings und Änderungslog werden nach Zeit sortiert ausgeliefert — nach einem Wiederaufbau folgen die Zeilen sonst der Einfügereihenfolge.
+**Briefings.** Die Oberfläche zeigt keine Briefings mehr; an ihrer Stelle steht „Gespeichert“. Jeder Lauf schreibt weiter ein Briefing, weil das Lagebild dessen Zusammenfassung zeigt. Veröffentlicht wird nur diese (`veroeffentlichterStand`): Briefings und Änderungslog waren ein Fünftel von `bootstrap.json`. Damit die Liste bei halbstündlichen Läufen nicht zuläuft, ersetzt ein Lauf ohne Änderung den vorherigen Leerlauf desselben Tages. Briefings und Änderungslog werden nach Zeit sortiert ausgeliefert — nach einem Wiederaufbau folgen die Zeilen sonst der Einfügereihenfolge.
 
 **Immer der neueste Code.** Läufe für ältere Commits können nach neueren starten: Am 13.09. begann der Lauf für einen früheren Push erst nach dem für den nächsten und lieferte dessen ältere Oberfläche wieder aus — beide Läufe meldeten Erfolg. Vor dem Bauen setzt der Schritt „Neuesten Code holen“ deshalb auf den aktuellen Stand von `main`; die Daten stammen aus dem eigenen, gerade abgeschlossenen Abruf. Hat sich `package-lock.json` geändert, wird neu installiert.
 
@@ -161,13 +171,17 @@ NEXT_PUBLIC_BASE_PATH=/<repo-name> npm run build:pages
 npm test
 ```
 
-Fünf Testdateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
+Sieben Testdateien. `tests/core.test.ts` deckt den Regelbetrieb ab: Feed-Parsing, Ausschuss- und Ressortzuordnung samt `leadOnly`-Regel, Sortierung nach Quellenbewegung, Abruffenster, Hash-Bildung, Wiederherstellung aus dem veröffentlichten Stand samt Vergleichsstand, chronologische Reihenfolge nach Wiederaufbau und ein vollständiger Lauf über baseline/unchanged/new/changed inklusive Quellenfehler und leerem Ergebnis.
 
 `tests/topics.test.ts` deckt die Themensuche ab: Stimmigkeit des Rasters, Erkennung aller TRUMPF-Kernthemen, Abkürzungen nur in Großschreibung, industrieller Kontext für KI und die breiten Standortbegriffe, deutsche Beugung samt Zeilenumbruch, Zählung und Titelvermerk, Reihenfolge und die Belegqualität.
 
 `tests/lobby.test.ts` deckt das Register ab: eine Abfrage je Thema, vollständige Übernahme eines echten Eintrags, unvollständige Antworten, Zusammenführung über mehrere Abfragen, die Zwei-Themen-Schwelle samt Ausnahme für den eigenen Eintrag, die Reihenfolge, das Ersetzen statt Anhäufen und der Fall, dass ein Registerausfall die Dokumentquellen nicht mitreißt.
 
 `tests/hardening.test.ts` deckt die Randfälle ab, die im Audit aufgefallen sind: fremde Adressen aus fremdem Markup, unsichtbare Trennzeichen, Formatbrüche gegen legitime Leerergebnisse, keine Wiederholung dauerhafter Fehler, Datumsüberlauf (der 31. Februar wurde zum 3. März), Namensabgleich über alle 24 echten Ausschussbezeichnungen, Aufbewahrung, sichtbare Teilausfälle und unvollständige API-Antworten.
+
+`tests/veroeffentlichung.test.ts` deckt ab, wann ein Dokument öffentlich war und wann die App es zeigt: die Datumswörter der Karten, die Datumszeilen der Dokumentansicht samt Erklärung bei später erschienenen Drucksachen, die PDF-Prüfung mit erhaltenem Zeitstempel und gesperrtem Link, den Hinweis auf Abruflücken, den Zeitplan, den schlanken veröffentlichten Stand und das Öffnen eines Dokuments am Seitenanfang.
+
+`tests/gespeichert.test.ts` deckt die Merkliste ab: robustes Lesen, Speichern und Entfernen, das Überstehen der Zehn-Tage-Frist, das Nachführen des neuesten Stands, zusammengeführte Papiere und den Ersatz der Briefing-Ansicht.
 
 `tests/anzeige.test.ts` deckt ab, was sichtbar ist: Wortwahl und Zahlen der Oberfläche gegen den Bestand, Datumsangaben ohne erfundene Uhrzeit, die Beschriftung von Terminen, die mobile Darstellung, und dass README, Oberfläche und Zeitplan dieselben Werte nennen wie der Code.
 

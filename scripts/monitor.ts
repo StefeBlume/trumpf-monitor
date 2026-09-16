@@ -4,12 +4,12 @@ loadEnvConfig(process.cwd());
 const SNAPSHOT='public/bootstrap.json';
 async function main(){
  mkdirSync('data',{recursive:true});
- const {runMonitor,dashboard,seedFromSnapshot}=await import('../src/server/monitor');
+ const {runMonitor,dashboard,seedFromSnapshot,veroeffentlichterStand}=await import('../src/server/monitor');
  // Ohne Datenbank aus dem veroeffentlichten Stand aufbauen, sonst gilt jedes bekannte Dokument als neu.
  const seeded=existsSync(SNAPSHOT)?await seedFromSnapshot(JSON.parse(readFileSync(SNAPSHOT,'utf8'))):0;
  const result=await runMonitor();
  const data=await dashboard();
- writeFileSync(SNAPSHOT,JSON.stringify(data));
+ writeFileSync(SNAPSHOT,JSON.stringify(veroeffentlichterStand(data)));
  const changed=(result?.items??[]).length;
  // Der Zeitplan committet nur, wenn sich inhaltlich etwas getan hat.
  if(process.env.GITHUB_OUTPUT)appendFileSync(process.env.GITHUB_OUTPUT,`changed=${changed>0}\n`);
