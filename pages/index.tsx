@@ -1,15 +1,20 @@
 import Head from 'next/head';
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Radar,LayoutDashboard,FileText,Radio,Settings,Search,ArrowUpRight,RefreshCw,ChevronRight,Clock,ShieldCheck,AlertCircle,ArrowLeft,Download,Archive,Check,SlidersHorizontal,X,Landmark,FileDown,Building2,Target,Quote,CalendarDays,Users,Euro,Bookmark,BookmarkCheck} from 'lucide-react';
 import {COMMITTEES,MINISTRIES,SOURCES,committeeById,type Dashboard,type Item,type Briefing,type Change} from '../src/model';
 import {TOPICS,topicById,type TopicMatch} from '../src/server/topics';
 import type {LobbyProject} from '../src/server/lobby';
 import {recency,kartenDaten as kartenDatenRoh,datumsZeilen,pdfAngabe,spaeterErschienen,abrufLuecke,dauer,suchtext,kartenDatum,istTermin,datum,nurTag,withTopics,anzeigeStatus,STATUS_STUNDEN,berlinTag,themenReihenfolge,quellenStand,gremienNamen,listenOrdnung,kommenderTermin} from '../src/ui/format';
+import {neueFassung,DATEN_ALTER_MS} from '../src/ui/fassung';
 import {MERK_SCHLUESSEL,merklisteLesen,istGemerkt,merken,vergessen,imBestand as merkImBestand,auffrischen,type Merkeintrag} from '../src/ui/gespeichert';
 // Statischer Betrieb auf GitHub Pages: kein Server, kein Schlüssel. Die Seite liest den Stand,
 // den der tägliche Lauf in bootstrap.json geschrieben hat. Alles, was einen Server braucht, entfällt.
 const STATIC=process.env.NEXT_PUBLIC_STATIC==='1';
 const REPO=process.env.NEXT_PUBLIC_REPO??'';
+const BUILD=process.env.NEXT_PUBLIC_BUILD??'';
+const BASIS=process.env.NEXT_PUBLIC_BASE_PATH??'';
+// Vor dem Zeichnen scrollen, damit die Seite nicht erst unten erscheint. Beim Vorrendern gibt es kein Layout.
+const useVorDemZeichnen=typeof window==='undefined'?useEffect:useLayoutEffect;
 const labels:Record<string,string>={baseline:'Ausgangsstand',new:'Neu',changed:'Geändert',unchanged:'Unverändert'};
 const ministryById=(id:string)=>MINISTRIES.find(m=>m.id===id);
 const empty:Dashboard={items:[],sources:SOURCES,briefings:[],events:[],lobby:[],serverTime:'',scheduleEnabled:false};
@@ -53,18 +58,36 @@ export default function Home(){
  // Nicht relativ zur Adresszeile: Next.js entfernt nach dem Start den Schraegstrich, sobald die Adresse einen
  // Parameter traegt. Aus "/trumpf-monitor/?x=1" wurde "/trumpf-monitor?x=1", der Abruf ging an
  // "/bootstrap.json" (404), und die App blieb leer - bei jedem geteilten Link mit ?fbclid= oder ?utm_.
- async function loadSnapshot(){const r=await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH??''}/bootstrap.json`,{cache:'no-store'});if(!r.ok)throw new Error('Stand nicht erreichbar');return await r.json() as Dashboard;}
+ async function loadSnapshot(){const r=await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH??''}/bootstrap.json`,{cache:'no-store'});if(!r.ok)throw new Error('Stand nicht erreichbar');const d=await r.json() as Dashboard;geladenUm.current=Date.now();return d;}
+ const geladenUm=useRef(0);
+ const offenesDokument=useRef<Item|null>(null);
+ useEffect(()=>{offenesDokument.current=selected;},[selected]);
+ // Neue Fassung nachladen, aber nie mitten im Lesen eines Dokuments. Ein Neuladen je Fassung, damit keine Schleife entsteht,
+ // falls ein Zwischenspeicher noch die alte Seite liefert.
+ async function fassungPruefen(){
+  if(!STATIC||!BUILD||offenesDokument.current)return;
+  try{
+   const r=await fetch(`${BASIS}/version.json?t=${Date.now()}`,{cache:'no-store'});if(!r.ok)return;
+   const neu=neueFassung(BUILD,await r.json());
+   if(neu&&sessionStorage.getItem('policy-fassung')!==neu){sessionStorage.setItem('policy-fassung',neu);window.location.replace(`${BASIS}/?v=${neu}`);}
+  }catch{}
+ }
  async function reload(){setBusy(true);setError('');try{setData(await loadSnapshot());setOnline(true);setNotice('Stand neu geladen.');}catch{setOnline(false);setError('Der gespeicherte Stand konnte nicht geladen werden. Bitte Internetverbindung prüfen.');}finally{setBusy(false);}}
  const cache=(d:Dashboard)=>{setData(d);try{localStorage.setItem('policy-cache',JSON.stringify(d));}catch{}};
  async function refresh(c=conn){setError('');try{const d=await request<Dashboard>(c,'dashboard');cache(d);setOnline(true);return true;}catch(e){setOnline(false);setError(e instanceof Error&&/timed? ?out|timeout|network|fetch/i.test(e.message)?'Die Verbindung dauert zu lange. Bitte Internetverbindung prüfen und erneut versuchen. Dein gespeicherter Stand bleibt erhalten.':e instanceof Error?e.message:'Keine Verbindung. Dein gespeicherter Stand bleibt erhalten.');return false;}}
  useEffect(()=>{let active=true;(async()=>{
- if(STATIC){try{const d=await loadSnapshot();if(active){setData(d);setOnline(true);}}catch{if(active)setError('Der gespeicherte Stand konnte nicht geladen werden. Bitte Seite neu laden.');}finally{if(active)setReady(true);}return;}
+ if(STATIC){void fassungPruefen();try{const d=await loadSnapshot();if(active){setData(d);setOnline(true);}}catch{if(active)setError('Der gespeicherte Stand konnte nicht geladen werden. Bitte Seite neu laden.');}finally{if(active)setReady(true);}return;}
  let saved:Connection={url:'',token:''};try{saved=JSON.parse(localStorage.getItem('policy-connection')??'null')??saved;const cached=JSON.parse(localStorage.getItem('policy-cache')??'null');if(cached)setData(cached);}catch{}
  if(!saved.token){try{const r=await fetch('/connection.json');if(r.ok)saved=await r.json();}catch{}}
  try{if(!localStorage.getItem('policy-cache')){const r=await fetch('/bootstrap.json');if(r.ok&&active)setData(await r.json());}}catch{}
  if(!active)return;setConn(saved);setDraft(saved);setReady(true);if(saved.token)await refresh(saved);
  })();return()=>{active=false;};},[]);
- useEffect(()=>{if(selected){setTab('detail');setVersions(null);scrollen(0);}else scrollen(listenPosition.current);},[selected?.id]);
+ useVorDemZeichnen(()=>{if(selected){setTab('detail');setVersions(null);}const y=selected?0:listenPosition.current;scrollen(y);const nachZeichnen=requestAnimationFrame(()=>scrollen(y));return()=>cancelAnimationFrame(nachZeichnen);},[selected?.id]);
+ // Zurueck in die App: neue Fassung und neuer Stand. iOS meldet die Rueckkehr teils nur ueber pageshow.
+ useEffect(()=>{if(!STATIC)return;const sichtbar=()=>{if(document.visibilityState!=='visible')return;void fassungPruefen();
+  if(Date.now()-geladenUm.current>DATEN_ALTER_MS)void loadSnapshot().then(d=>{setData(d);setOnline(true);}).catch(()=>{});};
+  document.addEventListener('visibilitychange',sichtbar);window.addEventListener('pageshow',sichtbar);
+  return()=>{document.removeEventListener('visibilitychange',sichtbar);window.removeEventListener('pageshow',sichtbar);};},[]);
  useEffect(()=>{try{setMerkliste(merklisteLesen(localStorage.getItem(MERK_SCHLUESSEL)));}catch{}},[]);
  const merklisteSichern=(l:Merkeintrag[])=>{try{localStorage.setItem(MERK_SCHLUESSEL,JSON.stringify(l));return true;}catch{return false;}};
  // Gespeichert wird das ganze Dokument. Solange es im Bestand ist, haelt die Liste dessen neuesten Stand fest.
@@ -159,8 +182,11 @@ export default function Home(){
  <section className="results"><div className="section-heading"><h2>Dokumente <span>{gremiumItems.length}</span></h2><span className="muted">{gremiumItems.some(i=>kommenderTermin(i,today()))?'Angekündigte Termine zuerst, dann nach letzter Bewegung':'Nach letzter Bewegung'} · Bewegungen der letzten 10 Tage</span></div>
  {gremiumItems.length?<div className="item-list">{gremiumItems.map(i=><ItemCard key={i.id} item={i} gemerkt={gemerkt(i.id)} onClick={()=>oeffnen(i)}/>)}</div>:
  <div className="empty"><Landmark size={36}/><h3>Keine Dokumente im Zeitraum</h3><p>Aus diesem Gremium ist in den letzten 10 Tagen nichts eingegangen. Das ist eine Aussage über den Zeitraum, nicht über das Gremium.</p></div>}</section></>:
- selected?<><button className="back" onClick={()=>setSelected(null)}><ArrowLeft size={18}/> Zurück</button><div className="detail-heading"><div className="eyebrow">{lead?lead.name:selected.institution} · {selected.documentType}</div><h1>{selected.title}</h1><div className="tags"><span className={'badge '+detailStatus}>{labels[detailStatus]}</span>{selected.documentNumber&&<span className="badge neutral">Drucksache {selected.documentNumber}</span>}{selected.step&&<span className="badge neutral">{selected.step}</span>}{selected.archived&&<span className="badge neutral">Archiviert</span>}</div><button className={'button merken '+(gemerkt(selected.id)?'secondary':'primary')} aria-pressed={gemerkt(selected.id)} onClick={()=>merkenUmschalten(selected)}>{gemerkt(selected.id)?<><BookmarkCheck size={17}/>Gespeichert</>:<><Bookmark size={17}/>Speichern</>}</button>{nichtImBestand&&<p className="muted">Nicht mehr im aktuellen Bestand – die App löscht nach zehn Tagen. Gezeigt wird der gespeicherte Stand.</p>}</div><div className="detail-tabs"><button className={tab==='detail'?'active':''} onClick={()=>setTab('detail')}>Dokument & Quelle</button>{!STATIC&&<button className={tab==='history'?'active':''} onClick={loadHistory}>Versionen & Änderungen</button>}</div>
- {tab==='detail'?<div className="detail-grid"><section className="panel"><div className="eyebrow">DAS PAPIER</div><h2>{selected.documentType}{selected.step&&selected.step!==selected.documentType?` · ${selected.step}`:''}</h2>{selected.text&&<p className="source-text">{selected.text}</p>}<div className="doc-links">{selected.pdfUrl&&(pdfZustand?.abrufbar===false?<span className="button secondary gesperrt" aria-disabled="true"><FileDown size={17}/>PDF noch nicht online</span>:<a href={selected.pdfUrl} target="_blank" rel="noopener noreferrer" className="button primary"><FileDown size={17}/>Amtliches PDF öffnen</a>)}<a href={selected.url} target="_blank" rel="noopener noreferrer" className="button secondary"><ArrowUpRight size={17}/>{quellenLabel(selected)}</a></div><hr/><dl>{[['Drucksachennummer',selected.documentNumber??(selected.documentType==='Plenarprotokoll'?'Keine – die Fundstelle ist ein Plenarprotokoll':'Nicht in der Quelle angegeben')],['Verfahrensschritt',selected.step??'Nicht in der Quelle angegeben'],['Vorgangstyp',selected.procedure??'Nicht in der Quelle angegeben'],['Urheber',selected.originator??'Nicht in der Quelle angegeben'],...datumsZeilen(selected)].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>{verspaetet&&<div className="notice"><Clock size={19}/><span><strong>Warum erst jetzt?</strong> {verspaetet}</span></div>}<span className="muted">Angezeigt werden die Angaben der amtlichen Quelle und, wo ein Thema vorkommt, die Fundstelle im Text. Bewertet wird nichts.</span></section>
+ selected?<><button className="back" onClick={()=>setSelected(null)}><ArrowLeft size={18}/> Zurück</button><div className="detail-heading"><div className="eyebrow">{lead?lead.name:selected.institution} · {selected.documentType}</div><h1>{selected.title}</h1><div className="tags"><span className={'badge '+detailStatus}>{labels[detailStatus]}</span>{selected.documentNumber&&<span className="badge neutral">Drucksache {selected.documentNumber}</span>}{selected.step&&<span className="badge neutral">{selected.step}</span>}{selected.archived&&<span className="badge neutral">Archiviert</span>}</div>
+ {/* Das PDF steht direkt unter dem Titel. Unten im Kasten lag es bei langen Titeln auf dem Handy unter dem Bildschirmrand:
+     im iOS-Safari bei "Schriftliche Fragen … der Bundesregierung" auf Höhe 1242 bei 714 sichtbaren Pixeln. */}
+ <div className="detail-aktionen">{selected.pdfUrl&&(pdfZustand?.abrufbar===false?<span className="button secondary gesperrt" aria-disabled="true"><FileDown size={17}/>PDF noch nicht online</span>:<a href={selected.pdfUrl} target="_blank" rel="noopener noreferrer" className="button primary"><FileDown size={17}/>Amtliches PDF öffnen</a>)}<button className="button secondary merken" aria-pressed={gemerkt(selected.id)} onClick={()=>merkenUmschalten(selected)}>{gemerkt(selected.id)?<><BookmarkCheck size={17}/>Gespeichert</>:<><Bookmark size={17}/>Speichern</>}</button></div>{nichtImBestand&&<p className="muted">Nicht mehr im aktuellen Bestand – die App löscht nach zehn Tagen. Gezeigt wird der gespeicherte Stand.</p>}</div><div className="detail-tabs"><button className={tab==='detail'?'active':''} onClick={()=>setTab('detail')}>Dokument & Quelle</button>{!STATIC&&<button className={tab==='history'?'active':''} onClick={loadHistory}>Versionen & Änderungen</button>}</div>
+ {tab==='detail'?<div className="detail-grid"><section className="panel"><div className="eyebrow">DAS PAPIER</div><h2>{selected.documentType}{selected.step&&selected.step!==selected.documentType?` · ${selected.step}`:''}</h2>{selected.text&&<p className="source-text">{selected.text}</p>}<div className="doc-links"><a href={selected.url} target="_blank" rel="noopener noreferrer" className="button secondary"><ArrowUpRight size={17}/>{quellenLabel(selected)}</a></div><hr/><dl>{[['Drucksachennummer',selected.documentNumber??(selected.documentType==='Plenarprotokoll'?'Keine – die Fundstelle ist ein Plenarprotokoll':'Nicht in der Quelle angegeben')],['Verfahrensschritt',selected.step??'Nicht in der Quelle angegeben'],['Vorgangstyp',selected.procedure??'Nicht in der Quelle angegeben'],['Urheber',selected.originator??'Nicht in der Quelle angegeben'],...datumsZeilen(selected)].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>{verspaetet&&<div className="notice"><Clock size={19}/><span><strong>Warum erst jetzt?</strong> {verspaetet}</span></div>}<span className="muted">Angezeigt werden die Angaben der amtlichen Quelle und, wo ein Thema vorkommt, die Fundstelle im Text. Bewertet wird nichts.</span></section>
  {!!topicsOf(selected).length&&<section className="panel fundstellen"><div className="eyebrow">FUNDSTELLEN</div><h2>Wo die Themen vorkommen</h2><p className="muted">Die Suche hat diese Begriffe im Titel oder Volltext gefunden. Ob der Fund für TRUMPF etwas bedeutet, entscheidet die Lektüre.</p>
  {themenReihenfolge(topicsOf(selected),topic).map(m=><div className="fund" key={m.topic}><div className="fund-kopf"><strong>{topicById(m.topic)?.label}</strong><span>{m.count} {m.count===1?'Fundstelle':'Fundstellen'}{m.inTitle?' · im Titel':''}</span></div><p className="fund-why">{topicById(m.topic)?.why}</p><blockquote className="beleg"><Quote size={13}/><span>{m.snippet}</span></blockquote><span className="muted">Gefunden über: {m.terms.join(', ')}</span></div>)}</section>}
  <aside className="panel"><h2>Gremien</h2>{lead&&<div className="body-block"><span className="badge lead">{istTermin(selected)?'Veranstaltet die Sitzung':'Federführend'}</span><strong>{lead.name}</strong><p>{lead.scope}</p></div>}

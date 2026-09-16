@@ -3,6 +3,7 @@ import {mkdtempSync,rmSync,readFileSync} from 'node:fs';import {tmpdir} from 'no
 import {runMonitor,dashboard,pdfPruefen,veroeffentlichterStand,type PdfPruefer} from '../src/server/monitor';
 import {resetDBForTests} from '../src/server/db';
 import {pdfKopf} from '../src/server/connectors';
+import {neueFassung,DATEN_ALTER_MS} from '../src/ui/fassung';
 import {datumsWort,kartenDaten,datumsZeilen,spaeterErschienen,pdfAngabe,abrufLuecke,dauer,datum} from '../src/ui/format';
 import type {DocumentInput,Item,Source,Dashboard} from '../src/model';
 
@@ -187,10 +188,43 @@ test('Veröffentlicht wird nur, was die Seite zeigt',()=>{
 // Auf dem Handy scrollt die ganze Seite. Zurueckgesetzt wurde nur der Inhaltsbereich: ein Dokument oeffnete sich unten.
 test('Ein Dokument öffnet sich oben, und zurück geht es an dieselbe Stelle',()=>{
  const seite=readFileSync('pages/index.tsx','utf8');
+ // Der PDF-Knopf steht unter dem Titel, vor den Reitern - nicht unten im Kasten, wo lange Titel ihn aus dem Bild schoben.
+ const kopf=seite.indexOf('<div className="detail-aktionen">'),reiter=seite.indexOf('<div className="detail-tabs">');
+ assert.ok(kopf>0&&kopf<reiter,'Aktionen vor den Reitern');
+ assert.ok(seite.slice(kopf,reiter).includes('Amtliches PDF öffnen')&&seite.slice(kopf,reiter).includes('merkenUmschalten(selected)'),'PDF und Speichern nebeneinander');
+ assert.equal((seite.match(/Amtliches PDF öffnen/g)??[]).length,1,'nur ein PDF-Knopf');
+ assert.ok(readFileSync('src/ui/style.css','utf8').includes('@media(max-width:700px){.detail-heading{display:flex;flex-direction:column}.detail-heading .detail-aktionen{order:-1;margin:0 0 18px}}'),'auf dem Handy über dem Titel, unabhängig von seiner Länge');
  assert.ok(seite.includes('const scrollen=(y:number)=>{window.scrollTo(0,y);mainRef.current?.scrollTo(0,y);};'),'Seite und Inhaltsbereich');
- assert.ok(seite.includes("useEffect(()=>{if(selected){setTab('detail');setVersions(null);scrollen(0);}else scrollen(listenPosition.current);},[selected?.id]);"));
+ assert.ok(seite.includes("useVorDemZeichnen(()=>{if(selected){setTab('detail');setVersions(null);}const y=selected?0:listenPosition.current;scrollen(y);const nachZeichnen=requestAnimationFrame(()=>scrollen(y));"),'vor dem Zeichnen und noch einmal danach');
+ assert.ok(seite.includes("const useVorDemZeichnen=typeof window==='undefined'?useEffect:useLayoutEffect;"),'beim Vorrendern ohne Layout-Effekt');
  assert.ok(seite.includes('listenPosition.current=Math.max(window.scrollY,mainRef.current?.scrollTop??0);setSelected(i);'));
  assert.ok(!/mainRef\.current\?\.scrollTo\(0,0\)/.test(seite),'kein Zurücksetzen nur des Inhaltsbereichs');
  assert.equal((seite.match(/onClick=\{\(\)=>setSelected\((?!null\))/g)??[]).length,0,'Listen öffnen über oeffnen(), nur Zurück setzt direkt');
  for(const aufruf of ['onClick={()=>oeffnen(i)}','onClick={()=>oeffnen(item)}','onClick={()=>oeffnen(e.item)}'])assert.ok(seite.includes(aufruf),aufruf);
+});
+
+// Am 16.09. oeffnete die App Thementreffer auf dem Handy weiter unten, obwohl die Korrektur live war; im iOS-Safari des
+// Simulators oeffnete dieselbe Seite oben (Position 0 aus 939, 2310 und 3501 px). Eine App auf dem Home-Bildschirm laeuft
+// stundenlang mit dem Code, mit dem sie geoeffnet wurde.
+test('Eine neue Fassung wird erkannt, die eigene nicht',()=>{
+ assert.equal(neueFassung('150798c0c5fb',{build:'2a4b6c8d0e1f'}),'2a4b6c8d0e1f');
+ assert.equal(neueFassung('150798c0c5fb',{build:'150798c0c5fb'}),null,'dieselbe Fassung');
+ assert.equal(neueFassung('',{build:'2a4b6c8d0e1f'}),null,'ohne eigene Kennung (lokaler Betrieb) nie');
+ for(const kaputt of [null,'text',{},{build:''},{build:42},{build:'../../böse'},{build:'<script>'}])assert.equal(neueFassung('150798c0c5fb',kaputt),null,JSON.stringify(kaputt));
+ assert.equal(DATEN_ALTER_MS,300000);
+});
+
+test('Die Seite lädt neue Fassung und neuen Stand, aber nie mitten im Lesen',()=>{
+ const seite=readFileSync('pages/index.tsx','utf8');
+ assert.ok(seite.includes('if(!STATIC||!BUILD||offenesDokument.current)return;'),'nicht bei offenem Dokument');
+ assert.ok(seite.includes("fetch(`${BASIS}/version.json?t=${Date.now()}`,{cache:'no-store'})"),'am Zwischenspeicher vorbei');
+ assert.ok(seite.includes("if(neu&&sessionStorage.getItem('policy-fassung')!==neu){sessionStorage.setItem('policy-fassung',neu);window.location.replace(`${BASIS}/?v=${neu}`);}"),'einmal je Fassung, mit neuer Adresse');
+ assert.ok(seite.includes("document.addEventListener('visibilitychange',sichtbar);window.addEventListener('pageshow',sichtbar);"),'bei Rückkehr in die App');
+ assert.ok(seite.includes('if(Date.now()-geladenUm.current>DATEN_ALTER_MS)void loadSnapshot()'),'der Stand wird nach fünf Minuten neu geholt');
+ assert.ok(seite.includes('if(STATIC){void fassungPruefen();'),'auch beim Start');
+ const yml=readFileSync('.github/workflows/monitor.yml','utf8');
+ assert.ok(yml.includes("export NEXT_PUBLIC_BUILD=$(git ls-files -s -- . ':(exclude)public/bootstrap.json' | git hash-object --stdin | cut -c1-12)"),'Fingerabdruck des Codes ohne Datenstand');
+ assert.ok(yml.includes(`printf '{"build":"%s"}' "$NEXT_PUBLIC_BUILD" > out/version.json`),'die veröffentlichte Fassung');
+ const bau=yml.indexOf('export NEXT_PUBLIC_BUILD'),npm=yml.indexOf('npm run build:pages',bau);
+ assert.ok(bau>0&&npm>bau,'die Kennung steht vor dem Bau fest');
 });

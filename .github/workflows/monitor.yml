@@ -104,7 +104,14 @@ jobs:
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ github.event.repository.name != format('{0}.github.io', github.repository_owner) && format('/{0}', github.event.repository.name) || '' }}
           NEXT_PUBLIC_REPO: ${{ github.repository }}
-        run: npm run build:pages
+        # Die Fassung ist ein Fingerabdruck des Codes, nicht des Datenstands: bootstrap.json zaehlt nicht, sonst luede die
+        # App nach jedem Datenlauf neu. Aus den Inhalten der Dateien statt aus der Historie - der Checkout ist flach.
+        # Die Seite vergleicht sie mit version.json und laedt nach; sonst laeuft eine App auf dem Home-Bildschirm stundenlang alt.
+        run: |
+          export NEXT_PUBLIC_BUILD=$(git ls-files -s -- . ':(exclude)public/bootstrap.json' | git hash-object --stdin | cut -c1-12)
+          npm run build:pages
+          printf '{"build":"%s"}' "$NEXT_PUBLIC_BUILD" > out/version.json
+          echo "Fassung $NEXT_PUBLIC_BUILD"
 
       - name: Vorherige Bündel mitliefern
         run: |
