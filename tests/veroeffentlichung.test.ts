@@ -4,7 +4,7 @@ import {runMonitor,dashboard,pdfPruefen,veroeffentlichterStand,type PdfPruefer} 
 import {resetDBForTests} from '../src/server/db';
 import {pdfKopf} from '../src/server/connectors';
 import {neueFassung,DATEN_ALTER_MS} from '../src/ui/fassung';
-import {datumsWort,kartenDaten,datumsZeilen,spaeterErschienen,pdfAngabe,abrufLuecke,dauer,datum} from '../src/ui/format';
+import {datumsWort,kartenDaten,datumsZeilen,spaeterErschienen,pdfAngabe,abrufLuecke,dauer,datum,TAKT} from '../src/ui/format';
 import type {DocumentInput,Item,Source,Dashboard} from '../src/model';
 
 // Aus dem echten Fall vom 16.09.: Antwort 21/7988, datiert 10.09., im DIP und als PDF ab 16.09., 07:51, in der App ab 11:08.
@@ -78,14 +78,16 @@ test('Ein PDF, das noch fehlt, wird nicht als Link angeboten',()=>{
  assert.ok(seite.includes("pdfZustand?.abrufbar===false?<span className=\"button secondary gesperrt\" aria-disabled=\"true\"><FileDown size={17}/>PDF noch nicht online</span>"));
 });
 
-// GitHub liess am 15.09. 29 von 34 geplanten Laeufen aus. Wer die App oeffnet, soll das sehen.
+// Reisst der Takt, soll man es sehen - nach Berliner Uhr, damit die Sommerzeit keine Rolle spielt.
 test('Eine Abruflücke wird angezeigt, nachts nicht',()=>{
  const um=(s:string)=>Date.parse(s);
- assert.equal(abrufLuecke('2026-09-16T07:08:00.000Z',um('2026-09-16T09:07:00.000Z')),119);
+ assert.equal(abrufLuecke('2026-09-16T07:08:00.000Z',um('2026-09-16T09:07:00.000Z')),119,'11:07 Uhr im Sommer');
  assert.equal(abrufLuecke('2026-09-16T08:30:00.000Z',um('2026-09-16T09:07:00.000Z')),null,'37 Minuten sind im Rahmen');
- assert.equal(abrufLuecke('2026-09-16T20:57:00.000Z',um('2026-09-16T22:30:00.000Z')),null,'nach dem letzten Lauf des Tages');
- assert.equal(abrufLuecke('2026-09-15T20:57:00.000Z',um('2026-09-16T04:30:00.000Z')),null,'vor der ersten Stunde des Tages');
- assert.equal(abrufLuecke('2026-09-15T20:57:00.000Z',um('2026-09-16T05:30:00.000Z')),513,'danach schon');
+ assert.equal(abrufLuecke('2026-09-16T19:00:00.000Z',um('2026-09-16T20:59:00.000Z')),119,'22:59 Uhr zählt noch');
+ assert.equal(abrufLuecke('2026-09-16T19:00:00.000Z',um('2026-09-16T21:01:00.000Z')),null,'23:01 Uhr nicht mehr');
+ assert.equal(abrufLuecke('2026-09-15T20:57:00.000Z',um('2026-09-16T04:30:00.000Z')),null,'06:30 Uhr, die erste Stunde läuft noch');
+ assert.equal(abrufLuecke('2026-09-15T20:57:00.000Z',um('2026-09-16T05:30:00.000Z')),513,'07:30 Uhr');
+ assert.equal(abrufLuecke('2026-12-15T20:00:00.000Z',um('2026-12-15T21:30:00.000Z')),90,'im Winter ist 21:30 UTC erst 22:30 Uhr');
  assert.equal(abrufLuecke(undefined),null);
  assert.equal(abrufLuecke('kaputt'),null);
  assert.equal(dauer(119),'119 Minuten');
@@ -93,22 +95,32 @@ test('Eine Abruflücke wird angezeigt, nachts nicht',()=>{
  const seite=readFileSync('pages/index.tsx','utf8');
  assert.ok(seite.includes('const luecke=STATIC?abrufLuecke(lastCheck):null;'));
  assert.ok(seite.includes('<strong>Der letzte Abruf liegt {dauer(luecke)} zurück.</strong>'));
+ assert.ok(!seite.includes('GitHub führt geplante Läufe aber nicht zuverlässig aus'),'der Hinweis beschreibt den Taktgeber');
 });
 
-test('Der Zeitplan meidet die volle und halbe Stunde und läuft alle 10 Minuten',()=>{
- const yml=readFileSync('.github/workflows/monitor.yml','utf8');
- const cron=yml.match(/- cron: '([^']+)'/)![1];
- assert.equal(cron,'7,17,27,37,47,57 4-20 * * *');
- const minuten=cron.split(' ')[0].split(',').map(Number);
- assert.ok(!minuten.includes(0)&&!minuten.includes(30),'keine Lastspitze');
- assert.ok(minuten.every((m,k)=>k===0||m-minuten[k-1]===10)&&60-minuten.at(-1)!+minuten[0]===10,'gleichmäßig alle 10 Minuten');
+// GitHub fuehrte vom 16. bis 18.09. von rund 102 geplanten Laeufen am Tag 2 bis 5 aus. Direkt angestossene Laeufe starten sofort.
+test('Ein Taktgeber stößt den Abruf alle 10 Minuten an und reicht sich selbst weiter',()=>{
+ const takt=readFileSync('.github/workflows/takt.yml','utf8');
+ assert.match(takt,/^\s+environment: takt$/m,'die Wartezeit kommt aus der Umgebung "takt", ohne Rechenzeit');
+ assert.match(takt,/^\s+actions: write$/m,'darf Läufe anstoßen');
+ assert.ok(takt.includes('gh workflow run monitor.yml --ref main'),'stößt den Abruf an');
+ assert.ok(takt.includes('gh workflow run takt.yml --ref main'),'und den nächsten Takt');
+ assert.ok(takt.includes(`stunde=$(TZ=Europe/Berlin date +%-H)`)&&takt.includes('if [ "$stunde" -ge 6 ] && [ "$stunde" -le 22 ]'),'nach Berliner Uhr, 06:00 bis 22:59');
+ const weiter=takt.slice(takt.indexOf('- name: Nächsten Takt anstoßen'));
+ assert.ok(weiter.includes('if: always()'),'die Kette reißt nicht, wenn der Abruf nicht angestoßen werden konnte');
+ assert.ok(weiter.includes('select(.databaseId != ${GITHUB_RUN_ID}'),'wartet schon ein Takt, entsteht keine zweite Kette');
+ assert.match(takt,/concurrency:\n  group: takt\n  cancel-in-progress: false/);
+ const monitor=readFileSync('.github/workflows/monitor.yml','utf8');
+ const pruef=monitor.indexOf('- name: Taktgeber sicherstellen'),abruf=monitor.indexOf('- name: Quellen abrufen');
+ assert.ok(pruef>0&&pruef<abruf,'jeder Abruf belebt eine gerissene Kette');
+ assert.match(monitor,/^\s+actions: write$/m);
+ assert.deepEqual(TAKT,{von:6,bis:22,minuten:10},'die Oberfläche kennt denselben Takt');
  const seite=readFileSync('pages/index.tsx','utf8');
- assert.ok(seite.includes('Sommer 06:07–22:57, Winter 05:07–21:57 Uhr'),'die Einstellungen nennen dieselben Zeiten');
- assert.ok(seite.includes('alle 10 Minuten ab und veröffentlicht den neuen Stand hier: im Sommer von 06:07 bis 22:57 Uhr, im Winter von 05:07 bis 21:57 Uhr'));
- assert.ok(!seite.includes('30 Minuten'),'keine alte Angabe');
+ assert.ok(seite.includes('Alle 10 Minuten · 06:00–23:00 Uhr Berliner Zeit, über den Taktgeber'),'Betriebsstatus');
+ assert.ok(seite.includes('alle 10 Minuten ab und veröffentlicht den neuen Stand hier, von 06:00 bis 23:00 Uhr Berliner Zeit'),'Einstellungen');
+ assert.ok(!seite.includes('30 Minuten')&&!seite.includes('06:07'),'keine alte Angabe');
  const readme=readFileSync('README.md','utf8');
- assert.ok(readme.includes('alle 10 Minuten von 04:07 bis 20:57 UTC')&&readme.includes('(102 Läufe am Tag)'),'README');
- assert.equal(minuten.length*17,102,'17 Stunden zu je 6 Läufen');
+ assert.ok(readme.includes('**Taktgeber.**')&&readme.includes('von 06:00 bis 23:00 Uhr Berliner Zeit'),'README');
 });
 
 const quelle:Source={id:'dip-drucksachen',name:'V',institution:'Bundestag',url:'https://dip.bundestag.de/',kind:'fulltext-dip',note:'Fixture'};

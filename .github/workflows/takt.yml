@@ -1,0 +1,44 @@
+name: Taktgeber für den Quellenabruf
+
+# GitHub führt geplante Läufe hier nicht aus: Vom 16. bis 18.09. liefen von rund 102 geplanten Abrufen am Tag 2 bis 5,
+# mit Lücken bis zu fünf Stunden. Direkt angestoßene Läufe starten dagegen sofort. Der Takt reicht sich deshalb selbst
+# weiter: Die Umgebung "takt" hat eine Wartezeit von 10 Minuten (wait timer, einmalig per API angelegt). Das Warten
+# kostet keine Rechenzeit, erst danach startet der Job, stößt den Abruf an und danach den nächsten Takt.
+on:
+  workflow_dispatch:
+  # Nur zum Wiederanlaufen, falls die Kette einmal reißt; jeder Abruf prüft das ebenfalls.
+  schedule:
+    - cron: '43 * * * *'
+
+permissions:
+  actions: write
+
+concurrency:
+  group: takt
+  cancel-in-progress: false
+
+jobs:
+  takt:
+    runs-on: ubuntu-latest
+    environment: takt
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # Berliner Zeit, damit die Sommerzeit keine Rolle spielt: von 06:00 bis 22:59 Uhr, das ganze Jahr.
+      - name: Quellenabruf anstoßen
+        run: |
+          stunde=$(TZ=Europe/Berlin date +%-H)
+          if [ "$stunde" -ge 6 ] && [ "$stunde" -le 22 ]; then
+            gh workflow run monitor.yml --ref main && echo "Abruf angestoßen ($stunde Uhr)"
+          else
+            echo "Nachtruhe ($stunde Uhr)"
+          fi
+
+      # Wartet schon ein anderer Takt, übernimmt er; sonst liefen zwei Ketten nebeneinander.
+      - name: Nächsten Takt anstoßen
+        if: always()
+        run: |
+          wartend=$(gh run list --workflow takt.yml --limit 20 --json databaseId,status \
+            -q "[.[] | select(.databaseId != ${GITHUB_RUN_ID} and (.status==\"queued\" or .status==\"waiting\" or .status==\"pending\" or .status==\"requested\"))] | length")
+          if [ "$wartend" = "0" ]; then gh workflow run takt.yml --ref main && echo "Nächster Takt angestoßen"; else echo "Ein Takt wartet bereits"; fi

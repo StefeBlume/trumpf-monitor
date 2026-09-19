@@ -150,26 +150,19 @@ test('Überlange Amtswörter brechen um',()=>{
  assert.match(css,/\.item-card h3[^{]*\{hyphens:auto\}/,'Dokumenttitel werden nach deutschen Regeln getrennt');
 });
 
-// Die Einstellungsseite versprach "zwischen 06:00 und 22:00 Uhr Berliner Zeit". GitHub plant aber
-// in UTC ohne Sommerzeit: der letzte Lauf fällt auf 22:30 im Sommer und 21:30 im Winter. Der Test
-// rechnet die Zeiten aus dem Workflow selbst nach, damit Text und Zeitplan nicht wieder auseinanderlaufen.
-test('Die genannten Laufzeiten folgen aus dem Zeitplan',()=>{
- const yml=readFileSync('.github/workflows/monitor.yml','utf8');
- const m=/cron:\s*'([\d,]+) (\d+)-(\d+) \* \* \*'/.exec(yml);
- assert.ok(m,'Zeitplan nicht gefunden');
- const minuten=m![1].split(',').map(Number);
- const [von,bis]=[Number(m![2]),Number(m![3])];
- const berlin=(tag:string,h:number,min:number)=>new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',hour:'2-digit',minute:'2-digit'})
-  .format(new Date(`${tag}T${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}:00Z`));
- const sommer=[berlin('2026-07-15',von,minuten[0]),berlin('2026-07-15',bis,minuten.at(-1)!)];
- const winter=[berlin('2026-12-15',von,minuten[0]),berlin('2026-12-15',bis,minuten.at(-1)!)];
+// Die Einstellungsseite versprach Zeiten, die nicht zum Zeitplan passten. Der Test liest den Takt aus dem Workflow,
+// damit Text und Takt nicht wieder auseinanderlaufen. Gerechnet wird in Berliner Zeit - der Taktgeber prüft sie selbst.
+test('Die genannten Laufzeiten folgen aus dem Takt',()=>{
+ const takt=readFileSync('.github/workflows/takt.yml','utf8');
+ const m=/if \[ "\$stunde" -ge (\d+) \] && \[ "\$stunde" -le (\d+) \]/.exec(takt);
+ assert.ok(m,'Takt nicht gefunden');
+ const [von,bis]=[Number(m![1]),Number(m![2])];
+ const zeit=(h:number)=>`${String(h).padStart(2,'0')}:00`;
  const seite=readFileSync('pages/index.tsx','utf8');
- assert.ok(seite.includes(`im Sommer von ${sommer[0]} bis ${sommer[1]} Uhr`),`Sommer muss ${sommer.join('–')} lauten`);
- assert.ok(seite.includes(`im Winter von ${winter[0]} bis ${winter[1]} Uhr`),`Winter muss ${winter.join('–')} lauten`);
- assert.ok(!seite.includes('zwischen 06:00 und 22:00'),'die alte Angabe stimmte in keiner Jahreszeit');
- assert.ok(seite.includes(`Sommer ${sommer[0]}–${sommer[1]}, Winter ${winter[0]}–${winter[1]} Uhr`),'auch der Betriebsstatus nennt die richtigen Zeiten');
- const readme=readFileSync('README.md','utf8');
- assert.ok(readme.includes(`${sommer[0]} bis ${sommer[1]} Berliner Zeit im Sommer`)&&readme.includes(`${winter[0]} bis ${winter[1]} im Winter`),'README nennt dieselben Zeiten');
+ assert.ok(seite.includes(`von ${zeit(von)} bis ${zeit(bis+1)} Uhr Berliner Zeit`),'Einstellungen');
+ assert.ok(seite.includes(`${zeit(von)}–${zeit(bis+1)} Uhr Berliner Zeit`),'Betriebsstatus');
+ assert.ok(!seite.includes('zwischen 06:00 und 22:00'),'die alte Angabe stimmte nie');
+ assert.ok(readFileSync('README.md','utf8').includes(`von ${zeit(von)} bis ${zeit(bis+1)} Uhr Berliner Zeit`),'README');
 });
 
 // Aussagen, die der Bestand widerlegt hat: 469 von 559 Vorhaben tragen keine Drucksache; 62 von 108

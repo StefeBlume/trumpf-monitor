@@ -62,13 +62,14 @@ export function spaeterErschienen(i:DatumsFelder&Pick<Item,'documentNumber'|'pdf
   +`Der Bundestag stellt Drucksachen und Beratungsschritte oft erst Tage später ins DIP, und erst dann kann die App sie finden. `
   +`Hier trägt der Eintrag im DIP den Zeitstempel ${mitUhr(i.updatedAt)}${pdf}; in der App steht er seit ${mitUhr(i.firstSeen)}.`;
 }
-// GitHub fuehrt geplante Laeufe nicht zuverlaessig aus: am 15.09. liefen 5 von 34, am 16.09. bis 11 Uhr einer. Die Antworten vom
-// 16.09., 07:51 kamen dadurch erst um 11:08 in die App. Ob der Stand veraltet ist, soll man sehen. Der Zeitplan laeuft von 04:07 bis
-// 20:57 UTC; gewarnt wird zwischen 05:00 und 21:00 UTC, wenn der letzte Abruf mehr als eine Stunde zurueckliegt.
+// Der Taktgeber stoesst den Abruf alle 10 Minuten von 06:00 bis 22:59 Uhr Berliner Zeit an. Vorher hing er an GitHubs Zeitplan,
+// der vom 16. bis 18.09. von rund 102 Laeufen am Tag 2 bis 5 ausfuehrte. Reisst der Takt doch einmal, soll man das sehen:
+// gewarnt wird zwischen 07:00 und 22:59 Uhr, wenn der letzte Abruf mehr als eine Stunde zurueckliegt.
+export const TAKT={von:6,bis:22,minuten:10};
 export function abrufLuecke(letzterAbruf:string|null|undefined,jetzt=Date.now()):number|null{
  if(!letzterAbruf||isNaN(Date.parse(letzterAbruf)))return null;
- const stunde=new Date(jetzt).getUTCHours();
- if(stunde<5||stunde>=21)return null;
+ const stunde=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Berlin',hour:'2-digit',hourCycle:'h23'}).format(new Date(jetzt)));
+ if(stunde<TAKT.von+1||stunde>TAKT.bis)return null;
  const minuten=Math.floor((jetzt-Date.parse(letzterAbruf))/60000);
  return minuten>60?minuten:null;
 }

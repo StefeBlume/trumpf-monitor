@@ -2,6 +2,8 @@ name: Quellen prüfen und veröffentlichen
 
 on:
   schedule:
+    # Den Takt gibt takt.yml vor: alle 10 Minuten von 06:00 bis 22:59 Uhr Berliner Zeit. Dieser Zeitplan bleibt nur als
+    # Rückfall, denn GitHub führt ihn kaum aus (16. bis 18.09.: 2 bis 5 von rund 102 Läufen am Tag).
     # GitHub plant in UTC und kennt keine Sommerzeit. Erster Lauf 04:07 UTC, letzter 20:57 UTC:
     # im Sommer 06:07 bis 22:57, im Winter 05:07 bis 21:57 Berliner Zeit, 102 Läufe am Tag.
     # Die Einstellungsseite nennt genau diese Zeiten.
@@ -18,6 +20,7 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: monitor
@@ -45,6 +48,17 @@ jobs:
           path: data
           key: monitor-db-${{ github.run_id }}
           restore-keys: monitor-db-
+
+      # Jeder Abruf, auch ein von Hand gestarteter, bringt eine gerissene Taktkette wieder in Gang.
+      - name: Taktgeber sicherstellen
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          aktiv=$(gh run list --workflow takt.yml --limit 20 --json status \
+            -q '[.[] | select(.status=="queued" or .status=="waiting" or .status=="pending" or .status=="requested" or .status=="in_progress")] | length')
+          if [ "$aktiv" = "0" ]; then gh workflow run takt.yml --ref main && echo "Taktgeber neu gestartet"; else echo "Taktgeber läuft"; fi
 
       - name: Quellen abrufen
         id: run
